@@ -96,3 +96,14 @@ Consumers pin `@v1` (moving major tag). Breaking changes bump to `@v2`.
 - Turbo/Nx remote-cache wiring + template-DB snapshot helpers.
 
 Decision log: `lovinka-devops-infra/docs/specs/2026-07-10-devulinka-buildkit-decisions.md`.
+
+## Onboarding a new project
+
+```bash
+blueprint/new-project.sh <owner>/<repo> <shortname> [--go] [--priority]
+```
+
+Generates the three pieces a new project needs: the runner compose block for
+`lovinka-devops-infra/apps/gh-runner/docker-compose.yml` (GitHub-App auth — no
+PAT), a starter `ci.yml` wired to the kit, and the remaining manual steps
+(install the `devulinka-runners` app on the repo, deploy the runner stack).
