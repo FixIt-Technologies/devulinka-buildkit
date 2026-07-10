@@ -1,0 +1,52 @@
+name: bk-build-lock-acquire
+description: >
+  Acquire a Devulinka build slot and HOLD it across subsequent steps (for jobs
+  that build via docker/build-push-action and can't wrap the build in a single
+  command). A background holder process keeps the flock; pair with
+  build-lock-release in an `if: always()` step. Failsafe: the holder dies
+  after 6h, and the runner's job-end process cleanup also releases the slot.
+inputs:
+  priority:
+    description: "'true' = may take the reserved third slot (deploy-critical builds)."
+    default: 'false'
+  timeout:
+    description: Seconds to wait for a slot before failing.
+    default: '2700'
+  label:
+    description: Human-readable label shown in queue logs.
+    default: ${{ github.repository }}/${{ github.workflow }}
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        BK_PRIORITY: ${{ inputs.priority }}
+        BK_TIMEOUT: ${{ inputs.timeout }}
+        BK_LABEL: ${{ inputs.label }}
+      run: |
+        args=(--timeout "$BK_TIMEOUT" --label "$BK_LABEL")
+        [ "$BK_PRIORITY" = "true" ] && args+=(--priority)
+        chmod +x "$GITHUB_ACTION_PATH/../../scripts/bk-lock.sh"
+
+        hold_dir="$RUNNER_TEMP/bk-hold-${GITHUB_RUN_ID}-${GITHUB_JOB}-$RANDOM"
+        mkdir -p "$hold_dir"
+        # The holder acquires a slot, marks it, then sleeps holding the fd.
+        nohup "$GITHUB_ACTION_PATH/../../scripts/bk-lock.sh" "${args[@]}" -- \
+          bash -c "echo held > '$hold_dir/held'; exec sleep 21600" \
+          > "$hold_dir/log" 2>&1 &
+        holder=$!
+        echo "BK_LOCK_HOLDER_PID=$holder" >> "$GITHUB_ENV"
+
+        deadline=$(( SECONDS + BK_TIMEOUT + 30 ))
+        while [ ! -f "$hold_dir/held" ]; do
+          if ! kill -0 "$holder" 2>/dev/null; then
+            echo "::error::build-slot holder exited before acquiring (see log)"
+            cat "$hold_dir/log"; exit 1
+          fi
+          if (( SECONDS > deadline )); then
+            echo "::error::timed out waiting for a build slot"
+            kill "$holder" 2>/dev/null || true; exit 75
+          fi
+          sleep 2
+        done
+        cat "$hold_dir/log"

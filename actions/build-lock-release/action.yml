@@ -1,0 +1,17 @@
+name: bk-build-lock-release
+description: >
+  Release the build slot held by build-lock-acquire. Run with `if: always()`
+  right after the build step. Idempotent — a missing/dead holder is fine
+  (the runner's job-end cleanup releases the slot anyway).
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        if [ -n "${BK_LOCK_HOLDER_PID:-}" ] && kill -0 "$BK_LOCK_HOLDER_PID" 2>/dev/null; then
+          # The holder exec'd into `sleep`; killing it closes the lock fd.
+          kill "$BK_LOCK_HOLDER_PID" 2>/dev/null || true
+          echo "released build slot (holder pid $BK_LOCK_HOLDER_PID)"
+        else
+          echo "no live holder to release"
+        fi
