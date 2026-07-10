@@ -64,6 +64,17 @@ on:
         description: Fail if the pushed image's compressed size exceeds this. 0 = off.
         type: number
         default: 0
+    secrets:
+      registry-username:
+        description: >
+          Registry login username. Optional — defaults to github.actor.
+        required: false
+      registry-password:
+        description: >
+          Registry login password/PAT. Optional — defaults to github.token.
+          Needed when the target GHCR package does not grant the repo's
+          Actions token write access (e.g. it was first published with a PAT).
+        required: false
     outputs:
       image-ref:
         description: First pushed image ref (image:first-tag)
@@ -86,8 +97,8 @@ jobs:
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ github.token }}
+          username: ${{ secrets.registry-username || github.actor }}
+          password: ${{ secrets.registry-password || github.token }}
 
       - name: Attach shared builder
         uses: LEFTEQ/devulinka-buildkit/actions/attach-builder@v1
