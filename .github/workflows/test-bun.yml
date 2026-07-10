@@ -1,0 +1,72 @@
+name: bk / test-bun
+
+# Reusable Bun test/build lane for Devulinka self-hosted runners.
+#
+#   jobs:
+#     web-test:
+#       uses: LEFTEQ/devulinka-buildkit/.github/workflows/test-bun.yml@v1
+#       with:
+#         runs-on: '["self-hosted","deployik-ci"]'
+#         working-directory: web
+#         run: |
+#           bunx tsc --noEmit
+#           bun run test
+#           bun run build
+#
+# On Devulinka runners the Bun download + install cache is a shared named
+# volume (runner-bun → /home/runner/.bun) that survives across jobs and
+# repos, so installs are warm by default — no actions/cache round-trip.
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON array of runner labels.
+        required: true
+        type: string
+      run:
+        description: Commands to run after install.
+        required: true
+        type: string
+      ref:
+        type: string
+        default: ''
+      bun-version:
+        description: Pinned Bun version. Keep in sync with the repo's packageManager field.
+        type: string
+        default: '1.3.9'
+      working-directory:
+        type: string
+        default: '.'
+      install:
+        description: Run bun install before the commands.
+        type: boolean
+        default: true
+      frozen-lockfile:
+        type: boolean
+        default: true
+      timeout-minutes:
+        type: number
+        default: 30
+
+jobs:
+  test:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ inputs.bun-version }}
+
+      - name: Install dependencies
+        if: ${{ inputs.install }}
+        working-directory: ${{ inputs.working-directory }}
+        run: bun install ${{ inputs.frozen-lockfile && '--frozen-lockfile' || '' }}
+
+      - name: Run
+        working-directory: ${{ inputs.working-directory }}
+        run: ${{ inputs.run }}

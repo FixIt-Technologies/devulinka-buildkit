@@ -1,0 +1,152 @@
+name: bk / build-image
+
+# Reusable image build on the Devulinka shared BuildKit daemon.
+#
+#   jobs:
+#     build:
+#       uses: LEFTEQ/devulinka-buildkit/.github/workflows/build-image.yml@v1
+#       with:
+#         runs-on: '["self-hosted","deployik-ci"]'
+#         image: ghcr.io/lefteq/lovinka-deployik
+#         dockerfile: docker/Dockerfile
+#         priority: true
+#
+# The job MUST land on a Devulinka runner (DooD + /var/lock bind-mount).
+# Caching comes from the persistent shared builder state on /mnt/data —
+# no cache-from/cache-to needed. Concurrency is capped host-wide by the
+# bk-build-lock slots (2 general + 1 priority).
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON array of runner labels, e.g. '["self-hosted","deployik-ci"]'
+        required: true
+        type: string
+      image:
+        description: Full image name without tag, e.g. ghcr.io/lefteq/foo
+        required: true
+        type: string
+      dockerfile:
+        required: true
+        type: string
+      context:
+        type: string
+        default: .
+      ref:
+        description: Git ref to check out (default = the calling ref)
+        type: string
+        default: ''
+      tags:
+        description: >
+          Newline-separated tag names (without the image part).
+          Default: "latest" + short SHA.
+        type: string
+        default: ''
+      build-args:
+        description: Newline-separated KEY=VALUE build args.
+        type: string
+        default: ''
+      priority:
+        description: Use the priority lane (deploy-critical builds only).
+        type: boolean
+        default: false
+      push:
+        type: boolean
+        default: true
+      builder:
+        type: string
+        default: devulinka-buildkit
+      lock-timeout:
+        type: number
+        default: 2700
+      size-limit-mb:
+        description: Fail if the pushed image's compressed size exceeds this. 0 = off.
+        type: number
+        default: 0
+    outputs:
+      image-ref:
+        description: First pushed image ref (image:first-tag)
+        value: ${{ jobs.build.outputs.image-ref }}
+
+jobs:
+  build:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image-ref: ${{ steps.refs.outputs.first }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Attach shared builder
+        uses: LEFTEQ/devulinka-buildkit/actions/attach-builder@v1
+        with:
+          builder: ${{ inputs.builder }}
+
+      - name: Resolve tags
+        id: refs
+        env:
+          BK_IMAGE: ${{ inputs.image }}
+          BK_TAGS: ${{ inputs.tags }}
+        run: |
+          if [ -z "$BK_TAGS" ]; then
+            BK_TAGS="latest
+          ${GITHUB_SHA::7}"
+          fi
+          flags=()
+          first=""
+          while IFS= read -r t; do
+            t="$(echo "$t" | xargs)"; [ -z "$t" ] && continue
+            flags+=(--tag "$BK_IMAGE:$t")
+            [ -z "$first" ] && first="$BK_IMAGE:$t"
+          done <<< "$BK_TAGS"
+          printf '%s\n' "${flags[@]}" > /tmp/bk-tag-flags
+          echo "first=$first" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push (queued on host build slots)
+        uses: LEFTEQ/devulinka-buildkit/actions/build-lock@v1
+        with:
+          priority: ${{ inputs.priority }}
+          timeout: ${{ inputs.lock-timeout }}
+          label: ${{ inputs.image }}
+          run: |
+            mapfile -t tag_flags < /tmp/bk-tag-flags
+            arg_flags=()
+            while IFS= read -r a; do
+              a="$(echo "$a" | xargs)"; [ -z "$a" ] && continue
+              arg_flags+=(--build-arg "$a")
+            done <<< "${{ inputs.build-args }}"
+            docker buildx build \
+              --builder "${{ inputs.builder }}" \
+              --file "${{ inputs.dockerfile }}" \
+              --provenance=false --sbom=false \
+              ${{ inputs.push && '--push' || '' }} \
+              "${tag_flags[@]}" \
+              "${arg_flags[@]}" \
+              "${{ inputs.context }}"
+
+      - name: Image size guard
+        if: ${{ inputs.push && inputs.size-limit-mb > 0 }}
+        env:
+          BK_REF: ${{ steps.refs.outputs.first }}
+          BK_LIMIT_MB: ${{ inputs.size-limit-mb }}
+        run: |
+          # Compressed size = sum of layer sizes in the manifest (single-arch builds).
+          size_mb=$(docker buildx imagetools inspect "$BK_REF" --raw \
+            | jq '[.layers[]?.size] | add // 0 | . / 1048576 | floor')
+          echo "compressed size: ${size_mb} MiB (limit ${BK_LIMIT_MB} MiB)"
+          if [ "$size_mb" -gt "$BK_LIMIT_MB" ]; then
+            echo "::error::image $BK_REF is ${size_mb} MiB > limit ${BK_LIMIT_MB} MiB"
+            exit 1
+          fi

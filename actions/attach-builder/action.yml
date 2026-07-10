@@ -1,0 +1,22 @@
+name: bk-attach-builder
+description: >
+  Attach this job to the persistent shared BuildKit daemon on the Devulinka
+  host (docker-container driver, deterministic container name). Client-side
+  buildx metadata does not survive runner restarts, so this re-creates the
+  builder handle idempotently — the daemon container and its cache live on.
+inputs:
+  builder:
+    description: Builder name.
+    default: devulinka-buildkit
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        BK_BUILDER: ${{ inputs.builder }}
+      run: |
+        docker buildx inspect "$BK_BUILDER" >/dev/null 2>&1 \
+          || docker buildx create --name "$BK_BUILDER" --driver docker-container \
+          || true
+        docker buildx use "$BK_BUILDER"
+        docker buildx inspect "$BK_BUILDER" | head -5

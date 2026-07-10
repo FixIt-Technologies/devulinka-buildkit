@@ -1,0 +1,37 @@
+name: bk-build-lock
+description: >
+  Run a command under one of the Devulinka host build slots (2 general +
+  1 priority-reserved). Gives a GLOBAL max-parallel-builds cap across repos
+  of different owners. Must run on a Devulinka self-hosted runner (needs the
+  /var/lock host bind-mount).
+inputs:
+  run:
+    description: Bash commands to execute while holding a build slot.
+    required: true
+  priority:
+    description: >
+      'true' lets this build take the reserved third slot when both general
+      slots are busy. Reserved for deploy-critical builds (FixIt deploys,
+      deployik).
+    default: 'false'
+  timeout:
+    description: Seconds to wait for a slot before failing.
+    default: '2700'
+  label:
+    description: Human-readable label shown in queue logs.
+    default: ${{ github.repository }}/${{ github.workflow }}
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        BK_RUN: ${{ inputs.run }}
+        BK_PRIORITY: ${{ inputs.priority }}
+        BK_TIMEOUT: ${{ inputs.timeout }}
+        BK_LABEL: ${{ inputs.label }}
+      run: |
+        args=(--timeout "$BK_TIMEOUT" --label "$BK_LABEL")
+        [ "$BK_PRIORITY" = "true" ] && args+=(--priority)
+        chmod +x "$GITHUB_ACTION_PATH/../../scripts/bk-lock.sh"
+        "$GITHUB_ACTION_PATH/../../scripts/bk-lock.sh" "${args[@]}" -- \
+          bash -euo pipefail -c "$BK_RUN"
