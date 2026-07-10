@@ -40,8 +40,17 @@ mkdir -p "$LOCK_DIR"
 SLOTS=(g1 g2)
 [[ $PRIORITY -eq 1 ]] && SLOTS=(g1 g2 p3)
 
+# Queue telemetry for runner-hub: JSONL events, best-effort (telemetry must
+# never fail a build). O_APPEND writes of one short line are atomic.
+EVENTS="$LOCK_DIR/events.jsonl"
+emit() { # emit <event> <slot> <extra-json-fields>
+  printf '{"ts":"%s","event":"%s","slot":"%s","label":"%s","priority":%s,"pid":%s%s}\n' \
+    "$(date -u +%FT%TZ)" "$1" "$2" "$LABEL" "$PRIORITY" "$$" "${3:-}" >> "$EVENTS" 2>/dev/null || true
+}
+
 start=$SECONDS
 next_report=0
+waiting_emitted=0
 while (( SECONDS - start < TIMEOUT )); do
   for slot in "${SLOTS[@]}"; do
     lockfile="$LOCK_DIR/build-$slot.lock"
@@ -49,13 +58,24 @@ while (( SECONDS - start < TIMEOUT )); do
     if flock -n "$fd"; then
       waited=$(( SECONDS - start ))
       echo "bk-lock: acquired slot $slot after ${waited}s (label=$LABEL priority=$PRIORITY)"
-      # Leave a breadcrumb for the queue-depth exporter / debugging.
-      printf '%s pid=%s label=%s\n' "$(date -u +%FT%TZ)" "$$" "$LABEL" >&"$fd" || true
-      exec "$@"
-      # exec replaces the shell; fd (and the lock) die with the command.
+      emit acquire "$slot" ",\"wait_s\":$waited"
+      # Run the command as a child (it inherits the lock fd) so we can emit a
+      # release event with duration + exit code. If this wrapper is killed,
+      # the trap forwards the signal; the kernel drops the lock when the last
+      # holder of the fd exits either way — no stale locks.
+      "$@" &
+      child=$!
+      trap 'kill "$child" 2>/dev/null' TERM INT
+      set +e; wait "$child"; rc=$?; set -e
+      emit release "$slot" ",\"wait_s\":$waited,\"held_s\":$(( SECONDS - start - waited )),\"rc\":$rc"
+      exit "$rc"
     fi
     exec {fd}>&-
   done
+  if (( waiting_emitted == 0 )); then
+    emit wait "-" ""
+    waiting_emitted=1
+  fi
   if (( SECONDS - start >= next_report )); then
     echo "bk-lock: waiting for a slot (${SLOTS[*]}) — $(( SECONDS - start ))s elapsed, timeout ${TIMEOUT}s"
     next_report=$(( SECONDS - start + 30 ))
@@ -64,4 +84,5 @@ while (( SECONDS - start < TIMEOUT )); do
 done
 
 echo "bk-lock: timed out after ${TIMEOUT}s waiting for a build slot" >&2
+emit timeout "-" ""
 exit 75
