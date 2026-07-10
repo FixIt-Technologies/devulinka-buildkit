@@ -19,4 +19,7 @@ runs:
           || docker buildx create --name "$BK_BUILDER" --driver docker-container \
           || true
         docker buildx use "$BK_BUILDER"
-        docker buildx inspect "$BK_BUILDER" | head -5
+        # NB: no `inspect | head` here — under the composite's pipefail shell,
+        # head closing the pipe early SIGPIPEs inspect and fails the step.
+        docker buildx inspect "$BK_BUILDER" >/dev/null
+        echo "attached to builder $BK_BUILDER"
