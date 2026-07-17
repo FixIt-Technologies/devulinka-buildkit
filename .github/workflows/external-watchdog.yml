@@ -1,0 +1,62 @@
+name: External Watchdog
+
+# External dead-man's switch for the Lovinka fleet. Lives in THIS public repo
+# because GitHub-hosted minutes are free here; the infra repos are private
+# with a hard Actions budget. MUST stay on GitHub-hosted runners — a
+# self-hosted runner would die with the box it is meant to watch.
+#
+# Monitoring stool:
+#   1. Alertmanager on the devops box — everything while that box is up
+#   2. prod-VPS cron watchdog        — pages when the devops box goes dark
+#   3. THIS workflow (GitHub infra)  — pages when both are dark (provider-
+#      level outage). Detection latency ~10-25 min due to schedule jitter;
+#      fine for this catastrophic-only tier.
+#
+# Secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (repo secrets).
+# The probed hostnames/IPs are public DNS records — nothing sensitive here.
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe both hosts and page on failure
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -uo pipefail
+          check() { # check <name> <url> [resolve] -> 0 up / 1 down (2 attempts)
+            local name=$1 url=$2 resolve=${3:-}
+            local args=(-fsS -m 12 -o /dev/null)
+            [ -n "$resolve" ] && args+=(--resolve "$resolve")
+            for i in 1 2; do
+              curl "${args[@]}" "$url" && return 0
+              sleep 10
+            done
+            echo "DOWN: $name ($url)"
+            return 1
+          }
+
+          failures=""
+          check devops-public https://status.fixit.dev.lovinka.com/ status.fixit.dev.lovinka.com:443:95.216.27.220 \
+            || failures="$failures devops(95.216.27.220)"
+          check prod-public https://api.fixit.app/api/v1/health api.fixit.app:443:116.202.15.49 \
+            || failures="$failures prod(116.202.15.49)"
+
+          if [ -n "$failures" ]; then
+            curl -fsS -m 15 -o /dev/null \
+              "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+              -d chat_id="${TG_CHAT}" \
+              -d text="🚨🚨 EXTERNAL watchdog (GitHub Actions): unreachable from the public internet:${failures}. If the devops box is in the list, Alertmanager AND the prod cron watchdog may be dead too — possible provider-level outage." \
+              || echo "::error::telegram send failed"
+            exit 1
+          fi
+          echo "both hosts healthy"
