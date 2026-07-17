@@ -1,19 +1,25 @@
 name: bk-build-lock
 description: >
-  Run a command under one of the Devulinka host build slots (2 general +
-  1 priority-reserved). Gives a GLOBAL max-parallel-builds cap across repos
-  of different owners. Must run on a Devulinka self-hosted runner (needs the
-  /var/lock host bind-mount).
+  Run a command under one of the Devulinka host build slots (build class:
+  4 general + 1 priority-reserved; small class: 4 separate slots for cheap
+  CI checks). Gives a GLOBAL max-parallel cap across repos of different
+  owners. Must run on a Devulinka self-hosted runner (needs the /var/lock
+  host bind-mount).
 inputs:
   run:
-    description: Bash commands to execute while holding a build slot.
+    description: Bash commands to execute while holding a slot.
     required: true
   priority:
     description: >
-      'true' lets this build take the reserved third slot when both general
-      slots are busy. Reserved for deploy-critical builds (FixIt deploys,
-      deployik).
+      'true' lets this build take the reserved priority slot when all
+      general slots are busy. Reserved for deploy-critical builds (FixIt
+      deploys, deployik). Ignored for class 'small'.
     default: 'false'
+  class:
+    description: >
+      Slot class — 'build' (heavy image builds) or 'small' (cheap CI checks:
+      typecheck, lint, quick bun tests; never queues behind image builds).
+    default: 'build'
   timeout:
     description: Seconds to wait for a slot before failing.
     default: '2700'
@@ -27,10 +33,11 @@ runs:
       env:
         BK_RUN: ${{ inputs.run }}
         BK_PRIORITY: ${{ inputs.priority }}
+        BK_CLASS: ${{ inputs.class }}
         BK_TIMEOUT: ${{ inputs.timeout }}
         BK_LABEL: ${{ inputs.label }}
       run: |
-        args=(--timeout "$BK_TIMEOUT" --label "$BK_LABEL")
+        args=(--class "$BK_CLASS" --timeout "$BK_TIMEOUT" --label "$BK_LABEL")
         [ "$BK_PRIORITY" = "true" ] && args+=(--priority)
         chmod +x "$GITHUB_ACTION_PATH/../../scripts/bk-lock.sh"
         "$GITHUB_ACTION_PATH/../../scripts/bk-lock.sh" "${args[@]}" -- \

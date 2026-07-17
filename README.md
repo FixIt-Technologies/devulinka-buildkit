@@ -1,16 +1,20 @@
 # devulinka-buildkit
 
-Shared CI/CD kit for projects building on the Devulinka devops VPS (32 vCPU /
-128 GB, Hetzner CCX53). Reusable GitHub workflows + composite actions that
-give every consumer:
+Shared CI/CD kit for projects building on the Devulinka devops server
+(Hetzner AX162, 96 threads / 128 GB / 3.5 TB NVMe RAID1). Reusable GitHub
+workflows + composite actions that give every consumer:
 
 - **One shared persistent BuildKit daemon** (`devulinka-buildkit`, state on
-  the Hetzner volume, 100 GiB GC budget) — bun/node/alpine base layers cached
+  the root NVMe, 500 GiB GC budget) — bun/node/alpine base layers cached
   once for all projects, no `cache-from`/`cache-to` choreography.
-- **A host-global build queue**: 2 general slots + 1 priority-reserved slot,
-  enforced with `flock` on the host (works across repos of *different*
-  owners, which GitHub concurrency cannot do). Protects the box from OOM and
-  disk thrash when several projects push at once.
+- **A host-global build queue**: 4 general slots + 1 priority-reserved slot
+  for deploy-critical builds (FixIt, deployik), enforced with `flock` on the
+  host (works across repos of *different* owners, which GitHub concurrency
+  cannot do). Protects the box from OOM and disk thrash when several
+  projects push at once.
+- **A separate `small` slot class** (4 slots) for cheap CI checks —
+  typecheck, lint, quick bun tests — so they never queue behind image
+  builds and a burst of them cannot swamp the box.
 - **Warm Bun installs** via the shared runner cache volume.
 
 This repo is public because its reusable workflows are consumed by repos
@@ -48,6 +52,19 @@ jobs:
         bunx tsc --noEmit
         bun run test
         bun run build
+```
+
+Small lane — wrap a cheap check so it takes a `small` slot instead of a
+build slot (use `build-lock-acquire`/`-release` with `class: small` when the
+check spans multiple steps):
+
+```yaml
+- uses: LEFTEQ/devulinka-buildkit/actions/build-lock@v1
+  with:
+    class: small
+    run: |
+      bunx tsc --noEmit
+      bun run lint
 ```
 
 À-la-carte composite actions (for workflows that need custom build steps):

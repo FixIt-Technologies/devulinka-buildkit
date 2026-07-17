@@ -7,8 +7,11 @@ description: >
   after 6h, and the runner's job-end process cleanup also releases the slot.
 inputs:
   priority:
-    description: "'true' = may take the reserved third slot (deploy-critical builds)."
+    description: "'true' = may take the reserved priority slot (deploy-critical builds). Ignored for class 'small'."
     default: 'false'
+  class:
+    description: "Slot class — 'build' (heavy image builds, 4+1 slots) or 'small' (cheap CI checks, 4 separate slots)."
+    default: 'build'
   timeout:
     description: Seconds to wait for a slot before failing.
     default: '2700'
@@ -21,10 +24,11 @@ runs:
     - shell: bash
       env:
         BK_PRIORITY: ${{ inputs.priority }}
+        BK_CLASS: ${{ inputs.class }}
         BK_TIMEOUT: ${{ inputs.timeout }}
         BK_LABEL: ${{ inputs.label }}
       run: |
-        args=(--timeout "$BK_TIMEOUT" --label "$BK_LABEL")
+        args=(--class "$BK_CLASS" --timeout "$BK_TIMEOUT" --label "$BK_LABEL")
         [ "$BK_PRIORITY" = "true" ] && args+=(--priority)
         chmod +x "$GITHUB_ACTION_PATH/../../scripts/bk-lock.sh"
 
