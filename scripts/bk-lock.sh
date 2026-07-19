@@ -23,6 +23,19 @@
 # command and released on exit (clean, killed, or OOM'd) — no stale-lock
 # cleanup needed.
 #
+# Load-aware admission (2026-07-20): slot COUNT alone can't see what else the
+# host is doing — 4 admitted builds on an idle box and 4 builds on top of an
+# E2E storm look identical to the semaphore. Before a normal build-class
+# request may even try for a slot, host pressure must be acceptable:
+#   1-min loadavg < BK_LOAD_MAX   (default 85% of nproc)
+#   MemAvailable  >= BK_MEM_MIN_GB (default 12 GiB)
+# Otherwise the request postpones (within its normal --timeout). --priority
+# builds (deploy-critical) BYPASS the gate — a deploy must never wait on
+# batch load — and the small class is exempt (cheap checks aren't the
+# problem). /proc/loadavg and /proc/meminfo are not namespaced, so the
+# values seen inside runner containers are the HOST's — exactly what we
+# want to gate on.
+#
 # Usage: bk-lock.sh [--priority] [--class build|small] [--timeout SECONDS] [--label TEXT] -- cmd args...
 set -euo pipefail
 
@@ -31,6 +44,7 @@ TIMEOUT=2700
 PRIORITY=0
 CLASS="build"
 LABEL="build"
+MEM_MIN_GB="${BK_MEM_MIN_GB:-12}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -66,10 +80,36 @@ emit() { # emit <event> <slot> <extra-json-fields>
     "$(date -u +%FT%TZ)" "$1" "$2" "$LABEL" "$PRIORITY" "$CLASS" "$$" "${3:-}" >> "$EVENTS" 2>/dev/null || true
 }
 
+# Host-pressure gate — see header. Returns 0 when a build may be admitted.
+pressure_ok() {
+  local load cores maxload memavail_kb
+  load=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null) || return 0
+  cores=$(nproc 2>/dev/null) || return 0
+  maxload="${BK_LOAD_MAX:-$(( cores * 85 / 100 ))}"
+  awk -v l="$load" -v m="$maxload" 'BEGIN{exit !(l < m)}' || return 1
+  memavail_kb=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo 2>/dev/null) || return 0
+  [[ -n "$memavail_kb" ]] || return 0
+  (( memavail_kb >= MEM_MIN_GB * 1048576 )) || return 1
+  return 0
+}
+
 start=$SECONDS
 next_report=0
 waiting_emitted=0
+defer_emitted=0
 while (( SECONDS - start < TIMEOUT )); do
+  if [[ "$CLASS" == build && $PRIORITY -eq 0 ]] && ! pressure_ok; then
+    if (( defer_emitted == 0 )); then
+      emit defer "-" ",\"load\":\"$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)\""
+      defer_emitted=1
+    fi
+    if (( SECONDS - start >= next_report )); then
+      echo "bk-lock: host under pressure (load $(cut -d' ' -f1 /proc/loadavg 2>/dev/null), MemAvailable $(awk '/^MemAvailable:/{printf "%.1fG", $2/1048576}' /proc/meminfo 2>/dev/null)) — postponing build admission ($(( SECONDS - start ))s elapsed, timeout ${TIMEOUT}s)"
+      next_report=$(( SECONDS - start + 30 ))
+    fi
+    sleep 10
+    continue
+  fi
   for slot in "${SLOTS[@]}"; do
     lockfile="$LOCK_DIR/build-$slot.lock"
     exec {fd}>>"$lockfile"
