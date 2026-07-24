@@ -120,6 +120,27 @@ the `v1` tag (`git tag -f v1 && git push -f origin v1`). Consumers pick it
 up on their next job — the action checkout ships the file; no host deploy,
 no runner restart.
 
+## Runner size tiers
+
+Every runner container additionally carries a Blacksmith-style size label —
+`devulinka-<N>vcpu-ubuntu-2604` — enforced on the container as a soft CPU
+weight (`cpu_shares: N*1024`, bursts freely on an idle host, yields to prod
+under contention) plus a hard memory cap on a lean 1:2 ladder:
+
+| Label | CPU weight | Mem cap | Meant for |
+|-------|-----------|---------|-----------|
+| `devulinka-2vcpu-ubuntu-2604` | 2 | 4 GB | lint, typecheck, schema-drift, small CI |
+| `devulinka-4vcpu-ubuntu-2604` | 4 | 8 GB | unit suites, PHPUnit, medium CI |
+| `devulinka-8vcpu-ubuntu-2604` | 8 | 16 GB | browser E2E, heavier test lanes |
+| `devulinka-16vcpu-ubuntu-2604` | 16 | 32 GB | image builds, integration suites |
+
+Lanes keep their dedicated warm workdirs — the size label is additive, so a
+workflow may target its lane label (cache affinity) or a size label alone.
+Tier definitions live in `lovinka-devops-infra/apps/gh-runner/docker-compose.yml`;
+decision log: `docs/specs/2026-07-24-runner-size-tiers-decisions.md` there.
+Slot classes (above) stay the admission layer — sizes bound one container,
+classes bound the host.
+
 ## Requirements on the runner
 
 - Devulinka self-hosted runner (DooD: host `/var/run/docker.sock` mounted,

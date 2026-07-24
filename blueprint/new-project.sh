@@ -34,10 +34,15 @@ cat <<EOF
   runner-${NAME}:
     <<: *runner-base
     container_name: gh-runner-${NAME}
+    # Size tier (Blacksmith-style, lean 1:2 ladder): new projects start on the
+    # smallest tier — bump to devulinka-{4,8,16}vcpu-ubuntu-2604 (cpu_shares
+    # N*1024, mem_limit N*2g) only when the lane demonstrably needs it.
+    cpu_shares: 2048
+    mem_limit: 4g
     environment:
       RUNNER_NAME: devops-vps-${NAME}-1
       RUNNER_WORKDIR: /opt/apps/gh-runner/work/${NAME}-1
-      LABELS: self-hosted,linux,x64,${NAME}-ci,devops-vps
+      LABELS: self-hosted,linux,x64,${NAME}-ci,devops-vps,devulinka-2vcpu-ubuntu-2604
       REPO_URL: https://github.com/${SLUG}
       # GitHub App auth — no PAT. Requires the devulinka-runners app to be
       # installed on this repo (see step 3).
