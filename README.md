@@ -67,6 +67,19 @@ check spans multiple steps):
       bun run lint
 ```
 
+E2E lane — hold an `e2e` slot for the whole heavy phase (compose stack +
+browser run) so concurrent E2E across repos can't stack up on the host.
+Acquire/release because the phase spans multiple steps:
+
+```yaml
+- uses: LEFTEQ/devulinka-buildkit/actions/build-lock-acquire@v1
+  with:
+    class: e2e
+# ... compose up, run tests ...
+- uses: LEFTEQ/devulinka-buildkit/actions/build-lock-release@v1
+  if: always()
+```
+
 À-la-carte composite actions (for workflows that need custom build steps):
 
 ```yaml
@@ -79,17 +92,33 @@ check spans multiple steps):
 
 ## The queue
 
-| Slot | Who |
-|------|-----|
-| g1, g2 | every build |
-| p3 | priority builds only (FixIt deploys, deployik) |
+Slot classes are defined in **`classes.conf`** at the repo root — the single
+place host capacity is tuned (`name|slots|priority_slots|pressure_gate`).
+Shipped classes:
 
-Priority builds try g1 → g2 → p3; normal builds try g1 → g2 and wait.
-A priority build is therefore never behind more than one running build.
-Locks live at `/var/lock/devulinka/build-{g1,g2,p3}.lock` on the host —
-every Devulinka runner container bind-mounts `/var/lock`, so the cap is
-global. A slot is held for exactly the lifetime of the wrapped build
-process and is released by the kernel on any kind of exit (no stale locks).
+| Class | Slots | Priority extra | Pressure-gated | For |
+|-------|-------|----------------|----------------|-----|
+| `build` | g1–g4 | p3 (deploy-critical: FixIt deploys, deployik) | yes | heavy image builds |
+| `small` | s1–s4 | — | no | cheap CI checks (typecheck, lint, quick tests) |
+| `e2e` | e1–e3 | — | yes | full compose stacks + browser E2E |
+
+Priority requests try the normal slots first and fall back to the reserved
+priority slot — a priority build is therefore never behind more than one
+running build. Pressure-gated classes additionally postpone admission while
+the host is loaded (1-min loadavg ≥ `BK_LOAD_MAX`, default 85% of nproc, or
+`MemAvailable` < `BK_MEM_MIN_GB`, default 12 GiB); `--priority` bypasses the
+gate.
+
+Locks live at `/var/lock/devulinka/build-<slot>.lock` on the host — every
+Devulinka runner container bind-mounts `/var/lock`, so the cap is global
+across repos of all owners. A slot is held for exactly the lifetime of the
+wrapped process and is released by the kernel on any kind of exit (no stale
+locks).
+
+**Changing capacity or adding a class:** edit `classes.conf`, merge, move
+the `v1` tag (`git tag -f v1 && git push -f origin v1`). Consumers pick it
+up on their next job — the action checkout ships the file; no host deploy,
+no runner restart.
 
 ## Requirements on the runner
 
