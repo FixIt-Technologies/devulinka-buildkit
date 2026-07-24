@@ -4,7 +4,7 @@ name: bk / build-image
 #
 #   jobs:
 #     build:
-#       uses: LEFTEQ/devulinka-buildkit/.github/workflows/build-image.yml@v1
+#       uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/build-image.yml@v1
 #       with:
 #         runs-on: '["self-hosted","deployik-ci"]'
 #         image: ghcr.io/lefteq/lovinka-deployik
@@ -101,7 +101,7 @@ jobs:
           password: ${{ secrets.registry-password || github.token }}
 
       - name: Attach shared builder
-        uses: LEFTEQ/devulinka-buildkit/actions/attach-builder@v1
+        uses: FixIt-Technologies/devulinka-buildkit/actions/attach-builder@v1
         with:
           builder: ${{ inputs.builder }}
 
@@ -126,7 +126,7 @@ jobs:
           echo "first=$first" >> "$GITHUB_OUTPUT"
 
       - name: Build & push (queued on host build slots)
-        uses: LEFTEQ/devulinka-buildkit/actions/build-lock@v1
+        uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock@v1
         with:
           priority: ${{ inputs.priority }}
           timeout: ${{ inputs.lock-timeout }}

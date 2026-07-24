@@ -4,7 +4,7 @@ name: bk / test-bun
 #
 #   jobs:
 #     web-test:
-#       uses: LEFTEQ/devulinka-buildkit/.github/workflows/test-bun.yml@v1
+#       uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/test-bun.yml@v1
 #       with:
 #         runs-on: '["self-hosted","deployik-ci"]'
 #         working-directory: web
