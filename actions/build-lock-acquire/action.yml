@@ -10,7 +10,7 @@ inputs:
     description: "'true' = may take the reserved priority slot (deploy-critical builds). Ignored for class 'small'."
     default: 'false'
   class:
-    description: "Slot class — 'build' (heavy image builds, 4+1 slots) or 'small' (cheap CI checks, 4 separate slots)."
+    description: "Slot class as defined in classes.conf — 'build' (heavy image builds, 4+1 slots), 'small' (cheap CI checks, 4 separate slots), or 'e2e' (full compose+browser stacks, 3 slots)."
     default: 'build'
   timeout:
     description: Seconds to wait for a slot before failing.

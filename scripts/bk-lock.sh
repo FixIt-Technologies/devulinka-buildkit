@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# devulinka-buildkit build-slot semaphore.
+# devulinka-buildkit host-slot semaphore.
 #
-# Two slot classes on the Devulinka host:
+# Slot classes are defined in classes.conf at the repo root (one line per
+# class: name|slots|priority_slots|pressure_gate) — that file is the single
+# place capacity is tuned. Override path with $BK_CLASSES_FILE; if no config
+# is readable the builtin defaults below apply (they mirror the shipped
+# classes.conf so a bare copy of this script still works).
+#
+# Shipped classes:
 #
 # build (heavy image builds): 4 general (g1-g4) + 1 priority-reserved (p3).
 #   normal builds   → compete for g1-g4 only
@@ -14,6 +20,9 @@
 # queues behind image builds and a burst of light checks cannot swamp
 # the box either. --priority is ignored for this class.
 #
+# e2e (full compose stacks + browser): 3 slots (e1-e3), pressure-gated like
+# build. --priority is ignored for this class.
+#
 # Locks are plain flock(2) files under $BK_LOCK_DIR. Runner containers all
 # bind-mount the host's /var/lock, so the same inode is contended across every
 # repo's runners — this is what gives a GLOBAL cap that GitHub (repos across
@@ -25,18 +34,19 @@
 #
 # Load-aware admission (2026-07-20): slot COUNT alone can't see what else the
 # host is doing — 4 admitted builds on an idle box and 4 builds on top of an
-# E2E storm look identical to the semaphore. Before a normal build-class
-# request may even try for a slot, host pressure must be acceptable:
+# E2E storm look identical to the semaphore. Before a normal request in a
+# gated class (pressure_gate=1 in classes.conf) may even try for a slot,
+# host pressure must be acceptable:
 #   1-min loadavg < BK_LOAD_MAX   (default 85% of nproc)
 #   MemAvailable  >= BK_MEM_MIN_GB (default 12 GiB)
 # Otherwise the request postpones (within its normal --timeout). --priority
-# builds (deploy-critical) BYPASS the gate — a deploy must never wait on
-# batch load — and the small class is exempt (cheap checks aren't the
-# problem). /proc/loadavg and /proc/meminfo are not namespaced, so the
+# requests (deploy-critical) BYPASS the gate — a deploy must never wait on
+# batch load — and ungated classes (e.g. small: cheap checks aren't the
+# problem) are exempt. /proc/loadavg and /proc/meminfo are not namespaced, so the
 # values seen inside runner containers are the HOST's — exactly what we
 # want to gate on.
 #
-# Usage: bk-lock.sh [--priority] [--class build|small] [--timeout SECONDS] [--label TEXT] -- cmd args...
+# Usage: bk-lock.sh [--priority] [--class NAME] [--timeout SECONDS] [--label TEXT] -- cmd args...
 set -euo pipefail
 
 LOCK_DIR="${BK_LOCK_DIR:-/var/lock/devulinka}"
@@ -61,16 +71,34 @@ command -v flock >/dev/null || { echo "bk-lock: flock(1) not available — this 
 
 mkdir -p "$LOCK_DIR"
 
-case "$CLASS" in
-  build)
-    SLOTS=(g1 g2 g3 g4)
-    [[ $PRIORITY -eq 1 ]] && SLOTS=(g1 g2 g3 g4 p3)
-    ;;
-  small)
-    SLOTS=(s1 s2 s3 s4)
-    ;;
-  *) echo "bk-lock: unknown --class $CLASS (build|small)" >&2; exit 2 ;;
-esac
+# Resolve the class → slot list from classes.conf. Builtin defaults mirror
+# the shipped file so a bare script copy keeps working.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLASSES_FILE="${BK_CLASSES_FILE:-$SCRIPT_DIR/../classes.conf}"
+BUILTIN_CLASSES='build|g1,g2,g3,g4|p3|1
+small|s1,s2,s3,s4||0
+e2e|e1,e2,e3||1'
+
+CLASS_LINE=""
+KNOWN_CLASSES=""
+while IFS= read -r line; do
+  line="${line%%#*}"
+  [[ -z "${line//[[:space:]]/}" ]] && continue
+  name="${line%%|*}"
+  KNOWN_CLASSES="${KNOWN_CLASSES:+$KNOWN_CLASSES|}$name"
+  [[ "$name" == "$CLASS" ]] && CLASS_LINE="$line"
+done < <(cat "$CLASSES_FILE" 2>/dev/null || printf '%s\n' "$BUILTIN_CLASSES")
+
+[[ -n "$CLASS_LINE" ]] || { echo "bk-lock: unknown --class $CLASS ($KNOWN_CLASSES)" >&2; exit 2; }
+
+IFS='|' read -r _ slots_csv prio_csv GATED <<< "$CLASS_LINE"
+GATED="${GATED//[[:space:]]/}"; GATED="${GATED:-1}"
+IFS=',' read -r -a SLOTS <<< "$slots_csv"
+if [[ $PRIORITY -eq 1 && -n "${prio_csv//[[:space:]]/}" ]]; then
+  IFS=',' read -r -a PRIO_SLOTS <<< "$prio_csv"
+  SLOTS+=("${PRIO_SLOTS[@]}")
+fi
+(( ${#SLOTS[@]} > 0 )) || { echo "bk-lock: class $CLASS has no slots configured" >&2; exit 2; }
 
 # Queue telemetry for runner-hub: JSONL events, best-effort (telemetry must
 # never fail a build). O_APPEND writes of one short line are atomic.
@@ -98,7 +126,7 @@ next_report=0
 waiting_emitted=0
 defer_emitted=0
 while (( SECONDS - start < TIMEOUT )); do
-  if [[ "$CLASS" == build && $PRIORITY -eq 0 ]] && ! pressure_ok; then
+  if [[ "$GATED" == "1" && $PRIORITY -eq 0 ]] && ! pressure_ok; then
     if (( defer_emitted == 0 )); then
       emit defer "-" ",\"load\":\"$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)\""
       defer_emitted=1
