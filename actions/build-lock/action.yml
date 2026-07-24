@@ -1,10 +1,10 @@
 name: bk-build-lock
 description: >
-  Run a command under one of the Devulinka host build slots (build class:
-  4 general + 1 priority-reserved; small class: 4 separate slots for cheap
-  CI checks). Gives a GLOBAL max-parallel cap across repos of different
-  owners. Must run on a Devulinka self-hosted runner (needs the /var/lock
-  host bind-mount).
+  Run a command under one of the Devulinka host slots (classes defined in
+  classes.conf — build: 4 general + 1 priority-reserved; small: 4 separate
+  slots for cheap CI checks; e2e: 3 slots for full compose+browser stacks).
+  Gives a GLOBAL max-parallel cap across repos of different owners. Must run
+  on a Devulinka self-hosted runner (needs the /var/lock host bind-mount).
 inputs:
   run:
     description: Bash commands to execute while holding a slot.
@@ -17,8 +17,9 @@ inputs:
     default: 'false'
   class:
     description: >
-      Slot class — 'build' (heavy image builds) or 'small' (cheap CI checks:
-      typecheck, lint, quick bun tests; never queues behind image builds).
+      Slot class as defined in classes.conf — 'build' (heavy image builds),
+      'small' (cheap CI checks: typecheck, lint, quick bun tests; never
+      queues behind image builds), or 'e2e' (full compose+browser stacks).
     default: 'build'
   timeout:
     description: Seconds to wait for a slot before failing.
