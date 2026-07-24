@@ -29,7 +29,7 @@ Build + push an image (queued on the host slots):
 ```yaml
 jobs:
   build:
-    uses: LEFTEQ/devulinka-buildkit/.github/workflows/build-image.yml@v1
+    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/build-image.yml@v1
     with:
       runs-on: '["self-hosted","deployik-ci"]'   # your repo's Devulinka runner labels
       image: ghcr.io/lefteq/lovinka-deployik
@@ -43,7 +43,7 @@ Bun test lane:
 ```yaml
 jobs:
   web-test:
-    uses: LEFTEQ/devulinka-buildkit/.github/workflows/test-bun.yml@v1
+    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/test-bun.yml@v1
     with:
       runs-on: '["self-hosted","deployik-ci"]'
       working-directory: web
@@ -59,7 +59,7 @@ build slot (use `build-lock-acquire`/`-release` with `class: small` when the
 check spans multiple steps):
 
 ```yaml
-- uses: LEFTEQ/devulinka-buildkit/actions/build-lock@v1
+- uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock@v1
   with:
     class: small
     run: |
@@ -72,19 +72,19 @@ browser run) so concurrent E2E across repos can't stack up on the host.
 Acquire/release because the phase spans multiple steps:
 
 ```yaml
-- uses: LEFTEQ/devulinka-buildkit/actions/build-lock-acquire@v1
+- uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock-acquire@v1
   with:
     class: e2e
 # ... compose up, run tests ...
-- uses: LEFTEQ/devulinka-buildkit/actions/build-lock-release@v1
+- uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock-release@v1
   if: always()
 ```
 
 À-la-carte composite actions (for workflows that need custom build steps):
 
 ```yaml
-- uses: LEFTEQ/devulinka-buildkit/actions/attach-builder@v1
-- uses: LEFTEQ/devulinka-buildkit/actions/build-lock@v1
+- uses: FixIt-Technologies/devulinka-buildkit/actions/attach-builder@v1
+- uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock@v1
   with:
     priority: 'false'
     run: docker buildx build --builder devulinka-buildkit ...
