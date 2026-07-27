@@ -45,6 +45,14 @@ on:
       frozen-lockfile:
         type: boolean
         default: true
+      clean:
+        description: >-
+          Pass false to keep untracked build caches (node_modules, .next/cache,
+          *.tsbuildinfo) on the persistent runner workdir; a scoped git clean
+          still removes every other untracked file. Default true = the old
+          full `git clean -ffdx` behavior.
+        type: boolean
+        default: true
       timeout-minutes:
         type: number
         default: 30
@@ -54,9 +62,14 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runs-on) }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
+          clean: ${{ inputs.clean }}
+
+      - name: Clean untracked files (keep dependency caches)
+        if: ${{ !inputs.clean }}
+        run: git clean -ffdx -e node_modules -e '**/.next/cache' -e '*.tsbuildinfo'
 
       - uses: oven-sh/setup-bun@v2
         with:
