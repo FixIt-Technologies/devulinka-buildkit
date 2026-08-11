@@ -2,7 +2,7 @@ name: bk-build-lock
 description: >
   Run a command under one of the Devulinka host slots (classes defined in
   classes.conf — build: 4 general + 1 priority-reserved; small: 4 separate
-  slots for cheap CI checks; e2e: 3 slots for full compose+browser stacks).
+  slots for cheap CI checks; e2e: 8 slots for full compose+browser stacks).
   Gives a GLOBAL max-parallel cap across repos of different owners. Must run
   on a Devulinka self-hosted runner (needs the /var/lock host bind-mount).
 inputs:
