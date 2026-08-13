@@ -1,1 +1,32 @@
 .worktrees/
+
+# Auth material — must never be tracked or even show up as untracked.
+# This repo is PUBLIC by design (README: "contains no secrets and never will").
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.ppk
+id_rsa*
+id_ed25519*
+id_ecdsa*
+id_dsa*
+known_hosts
+authorized_keys
+*.kubeconfig
+kubeconfig*
+.netrc
+.npmrc
+.env
+.env.*
+!.env.example
+secrets/
+*.secret
+*.token
+credentials.json
+service-account*.json

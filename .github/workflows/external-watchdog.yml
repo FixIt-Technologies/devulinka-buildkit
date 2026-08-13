@@ -13,7 +13,9 @@ name: External Watchdog
 #      fine for this catastrophic-only tier.
 #
 # Secrets: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID (repo secrets).
-# The probed hostnames/IPs are public DNS records — nothing sensitive here.
+# Variables: WATCHDOG_DEVOPS_IP, WATCHDOG_PROD_IP (repo variables) — the
+# expected A-record IPs, kept out of the public file so the repo doesn't
+# hand out the org→infra mapping for free.
 
 on:
   schedule:
@@ -31,8 +33,14 @@ jobs:
         env:
           TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DEVOPS_IP: ${{ vars.WATCHDOG_DEVOPS_IP }}
+          PROD_IP: ${{ vars.WATCHDOG_PROD_IP }}
         run: |
           set -uo pipefail
+          if [ -z "$DEVOPS_IP" ] || [ -z "$PROD_IP" ]; then
+            echo "::error::WATCHDOG_DEVOPS_IP / WATCHDOG_PROD_IP repo variables not set"
+            exit 1
+          fi
           check() { # check <name> <url> [resolve] -> 0 up / 1 down (2 attempts)
             local name=$1 url=$2 resolve=${3:-}
             local args=(-fsS -m 12 -o /dev/null)
@@ -46,10 +54,10 @@ jobs:
           }
 
           failures=""
-          check devops-public https://status.fixit.dev.lovinka.com/ status.fixit.dev.lovinka.com:443:REDACTED-DEVOPS-IP \
-            || failures="$failures devops(REDACTED-DEVOPS-IP)"
-          check prod-public https://api.fixit.app/api/v1/health api.fixit.app:443:REDACTED-PROD-IP \
-            || failures="$failures prod(REDACTED-PROD-IP)"
+          check devops-public https://status.fixit.dev.lovinka.com/ "status.fixit.dev.lovinka.com:443:${DEVOPS_IP}" \
+            || failures="$failures devops(${DEVOPS_IP})"
+          check prod-public https://api.fixit.app/api/v1/health "api.fixit.app:443:${PROD_IP}" \
+            || failures="$failures prod(${PROD_IP})"
 
           if [ -n "$failures" ]; then
             curl -fsS -m 15 -o /dev/null \
