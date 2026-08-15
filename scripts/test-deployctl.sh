@@ -36,6 +36,9 @@ class H(BaseHTTPRequestHandler):
         if "badcode" in self.path:
             w.write(f"\n@@deploy-gateway-exit@@ {nonce} nope\n".encode())
             return  # nonce matches but the code is not a number
+        if "bigcode" in self.path:
+            w.write(f"\n@@deploy-gateway-exit@@ {nonce} 300\n".encode())
+            return  # numeric but above the 255 exit-status bound
         code = 7 if "failverb" in self.path else (5 if "forge" in self.path else 0)
         w.write(f"\n@@deploy-gateway-exit@@ {nonce} {code}\n".encode())
     def log_message(self, *a):
@@ -84,8 +87,12 @@ check "forged sentinel ignored, real nonce verdict wins" 5 "$rc"
 bash "$deployctl" fixit-dev truncated >/dev/null 2>&1; rc=$?
 check "missing status line = unknown state 70" 70 "$rc"
 
-bash "$deployctl" fixit-dev badcode >/dev/null 2>&1; rc=$?
-check "non-numeric exit code = unknown state 70" 70 "$rc"
+out=$(bash "$deployctl" fixit-dev badcode 2>/dev/null); rc=$?
+extra=0; [[ $out != *"@@deploy-gateway-exit@@"* ]] && extra=1
+check "non-numeric exit code = unknown state 70, status line not leaked" 70 "$rc" "$extra"
+
+bash "$deployctl" fixit-dev bigcode >/dev/null 2>&1; rc=$?
+check "exit code above 255 = unknown state 70" 70 "$rc"
 
 bash "$deployctl" fixit-dev 'pull;rm' >/dev/null 2>&1; rc=$?
 check "metachar verb rejected" 2 "$rc"
