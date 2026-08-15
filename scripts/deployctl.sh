@@ -94,7 +94,7 @@ trap 'rm -f "$code_file"' EXIT
 
 set +e
 curl "${curl_args[@]}" "$url" | awk -v out="$code_file" -v sentinel="$sentinel" -v nonce="$nonce" '
-  $1 == sentinel && $2 == nonce && NF == 3 { code = $3; next }
+  $1 == sentinel && $2 == nonce && NF == 3 && $3 ~ /^[0-9]+$/ && $3 + 0 <= 255 { code = $3; next }
   { print; fflush() }
   END { if (code == "") exit 3; print code > out }
 '

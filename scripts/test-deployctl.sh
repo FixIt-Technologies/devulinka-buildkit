@@ -33,6 +33,9 @@ class H(BaseHTTPRequestHandler):
             w.write(b"@@deploy-gateway-exit@@ deadbeefdeadbeefdeadbeefdeadbeef 0\n")
         if "truncated" in self.path:
             return  # no authenticated status line at all
+        if "badcode" in self.path:
+            w.write(f"\n@@deploy-gateway-exit@@ {nonce} nope\n".encode())
+            return  # nonce matches but the code is not a number
         code = 7 if "failverb" in self.path else (5 if "forge" in self.path else 0)
         w.write(f"\n@@deploy-gateway-exit@@ {nonce} {code}\n".encode())
     def log_message(self, *a):
@@ -80,6 +83,9 @@ check "forged sentinel ignored, real nonce verdict wins" 5 "$rc"
 
 bash "$deployctl" fixit-dev truncated >/dev/null 2>&1; rc=$?
 check "missing status line = unknown state 70" 70 "$rc"
+
+bash "$deployctl" fixit-dev badcode >/dev/null 2>&1; rc=$?
+check "non-numeric exit code = unknown state 70" 70 "$rc"
 
 bash "$deployctl" fixit-dev 'pull;rm' >/dev/null 2>&1; rc=$?
 check "metachar verb rejected" 2 "$rc"

@@ -72,7 +72,10 @@ on:
         default: 30
 
 # The job runs caller-provided prepare code with the secrets context in
-# reach — keep the ambient token as weak as possible.
+# reach — keep the ambient token as weak as possible. packages:read stays
+# because deploy plans hand the job token to the target's registry-login
+# verb (the VPS pulls the release images from GHCR with it); contents:read
+# covers both checkouts.
 permissions:
   contents: read
   packages: read
