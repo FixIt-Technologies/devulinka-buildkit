@@ -159,6 +159,7 @@ jobs:
     with:
       runs-on: '["self-hosted","fixit-bastion"]'
       target: fixit-dev
+      environment: development   # binds GitHub environment protection + scoped secrets
       prepare: |
         bash scripts/deploy/render-env.sh dev-api > /tmp/payloads/env.development
       plan: |
@@ -167,6 +168,15 @@ jobs:
         migrate
         roll-api
 ```
+
+**Failure semantics** (read before wiring `migrate`-class verbs): a step
+exits with the *remote* verb's exit code — non-zero aborts the plan. Exit
+**70** means the gateway's nonce-authenticated status line never arrived:
+the deploy state is **UNKNOWN** (the verb may have half-run on the target).
+Never blindly retry an unknown-state step — inspect the target first
+(`version`/`probe` verbs, container state), then decide. The status line is
+authenticated with a per-request nonce, so dispatcher output cannot forge a
+verdict. Tests: `scripts/test-deployctl.sh`.
 
 À la carte: `actions/deploy-step@v2` (single verb) or
 `scripts/deployctl.sh` directly. Decision log:

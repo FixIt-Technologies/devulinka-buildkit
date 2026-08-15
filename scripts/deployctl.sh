@@ -11,7 +11,12 @@
 # dispatcher framing) and the bytes ride the request body.
 #
 # Output: the dispatcher's combined output, live. Exit code: the remote
-# verb's exit code.
+# verb's exit code. The status line is authenticated with a per-request
+# nonce (X-Exit-Nonce), so dispatcher output cannot forge it.
+#
+# Exit 70 = the response ended without the gateway's status line: the deploy
+# state is UNKNOWN. Never retry an unknown-state step blindly (a migrate may
+# have half-run) — inspect the target first.
 set -euo pipefail
 
 gateway=${DEPLOY_GATEWAY_URL:-http://192.168.251.1:8791}
@@ -56,20 +61,40 @@ if [[ -n $payload ]]; then
   curl_args+=(--data-binary "@$payload" -H 'Content-Type: application/octet-stream')
 fi
 
+# Percent-encode one arg for the query string. The server-side charset
+# excludes true metacharacters, but `+` and friends have QUERY semantics —
+# an unencoded `+` arrives as a space. Encode everything non-unreserved.
+urlencode() {
+  local s=$1 out='' c i
+  for (( i = 0; i < ${#s}; i++ )); do
+    c=${s:i:1}
+    case $c in
+      [A-Za-z0-9.~_-]) out+=$c ;;
+      *) printf -v c '%%%02X' "'$c"; out+=$c ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
 query=''
-for arg in "${args[@]:-}"; do
+for arg in ${args[@]+"${args[@]}"}; do
   [[ -z $arg ]] && continue
   [[ $arg =~ ^[A-Za-z0-9._/@:=+-]{1,128}$ ]] || { echo "deployctl: invalid arg '$arg'" >&2; exit 2; }
-  query+="${query:+&}arg=${arg}"
+  query+="${query:+&}arg=$(urlencode "$arg")"
 done
+
+# Per-request nonce: the gateway echoes it on the status line, so a line the
+# DISPATCHER prints can never be mistaken for the gateway's verdict.
+nonce=$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')
+curl_args+=(-H "X-Exit-Nonce: $nonce")
 
 url="${gateway}/v1/deploy/${target}/${verb}${query:+?${query}}"
 code_file=$(mktemp)
 trap 'rm -f "$code_file"' EXIT
 
 set +e
-curl "${curl_args[@]}" "$url" | awk -v out="$code_file" -v sentinel="$sentinel" '
-  $1 == sentinel && NF == 2 { code = $2; next }
+curl "${curl_args[@]}" "$url" | awk -v out="$code_file" -v sentinel="$sentinel" -v nonce="$nonce" '
+  $1 == sentinel && $2 == nonce && NF == 3 { code = $3; next }
   { print; fflush() }
   END { if (code == "") exit 3; print code > out }
 '
@@ -81,7 +106,7 @@ if (( pipe_status[0] != 0 )); then
   exit 70
 fi
 if (( pipe_status[1] != 0 )); then
-  echo "deployctl: gateway response ended without an exit status — deploy state UNKNOWN, do not retry blindly" >&2
+  echo "deployctl: gateway response ended without an authenticated exit status — deploy state UNKNOWN, do not retry blindly" >&2
   exit 70
 fi
 exit "$(cat "$code_file")"
