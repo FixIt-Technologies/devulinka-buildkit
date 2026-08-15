@@ -16,6 +16,7 @@ name: deploy (buildkit v2)
 #     with:
 #       runs-on: '["self-hosted","fixit-bastion"]'
 #       target: fixit-dev
+#       environment: development
 #       prepare: |
 #         bash scripts/deploy/render-env.sh dev-api > /tmp/payloads/env.development
 #       plan: |
@@ -26,6 +27,13 @@ name: deploy (buildkit v2)
 #
 # Plan grammar: one step per line — `verb [args...] [@payload-file]`.
 # Blank lines and #-comments are skipped. A failing step aborts the plan.
+# All inputs reach the shell as environment variables, never by template
+# interpolation into script source — a hostile input value is data here.
+#
+# Failure semantics: deployctl exits with the REMOTE verb's exit code; a
+# response that ends without the gateway's nonce-authenticated exit line is
+# exit 70 = deploy state UNKNOWN — never retry an unknown-state step blindly
+# (a migrate may have half-run); inspect the target first.
 
 on:
   workflow_call:
@@ -42,6 +50,11 @@ on:
         description: Deploy steps, one `verb [args...] [@payload-file]` per line
         required: true
         type: string
+      environment:
+        description: GitHub environment to bind the job to (protection rules + environment-scoped secrets). Strongly recommended for prod targets.
+        required: false
+        type: string
+        default: ''
       prepare:
         description: Bash run before the plan (render payload files; secrets/vars available as SECRETS_JSON / VARS_JSON)
         required: false
@@ -58,20 +71,31 @@ on:
         type: number
         default: 30
 
+# The job runs caller-provided prepare code with the secrets context in
+# reach — keep the ambient token as weak as possible.
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   deploy:
     runs-on: ${{ fromJSON(inputs.runs-on) }}
+    # Empty string = no environment binding (GitHub ignores an empty name).
+    environment: ${{ inputs.environment }}
     timeout-minutes: ${{ inputs.timeout-minutes }}
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.checkout-ref }}
 
+      # Pin the client to THIS workflow file's own revision — a consumer
+      # pinning deploy.yml to a SHA gets the deployctl from that same SHA,
+      # not whatever the moving v2 tag points at today.
       - name: Check out buildkit
         uses: actions/checkout@v5
         with:
           repository: FixIt-Technologies/devulinka-buildkit
-          ref: v2
+          ref: ${{ github.job_workflow_sha }}
           path: .buildkit-v2
 
       - name: Verify gateway identity
@@ -84,25 +108,27 @@ jobs:
         env:
           SECRETS_JSON: ${{ toJSON(secrets) }}
           VARS_JSON: ${{ toJSON(vars) }}
+          PREPARE_SCRIPT: ${{ inputs.prepare }}
         run: |
           set -euo pipefail
           umask 077
           mkdir -p /tmp/payloads
-          bash -euo pipefail -c '${{ inputs.prepare }}'
+          bash -euo pipefail -c "$PREPARE_SCRIPT"
 
       - name: Run deploy plan
+        env:
+          DEPLOY_TARGET: ${{ inputs.target }}
+          DEPLOY_PLAN: ${{ inputs.plan }}
         run: |
           set -euo pipefail
           while IFS= read -r line; do
             line="${line#"${line%%[![:space:]]*}"}"
             [[ -z $line || $line == \#* ]] && continue
-            echo "::group::deploy ${{ inputs.target }} · $line"
-            # shellcheck disable=SC2086 — plan tokens are validated by deployctl
-            bash .buildkit-v2/scripts/deployctl.sh '${{ inputs.target }}' $line
+            printf '::group::deploy %s · %s\n' "$DEPLOY_TARGET" "$line"
+            read -r -a tokens <<< "$line"
+            bash .buildkit-v2/scripts/deployctl.sh "$DEPLOY_TARGET" "${tokens[@]}"
             echo "::endgroup::"
-          done <<'PLAN_EOF'
-          ${{ inputs.plan }}
-          PLAN_EOF
+          done <<< "$DEPLOY_PLAN"
 
       - name: Scrub payloads
         if: always()

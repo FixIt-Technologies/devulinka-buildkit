@@ -26,17 +26,24 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: deployctl ${{ inputs.target }} ${{ inputs.verb }}
+    - name: deploy-step
       shell: bash
+      # Inputs reach the script as environment variables only — never by
+      # template interpolation into the script source, so a value containing
+      # quotes or $(...) is data, not shell.
       env:
         DEPLOY_GATEWAY_URL: ${{ inputs.gateway-url }}
+        STEP_TARGET: ${{ inputs.target }}
+        STEP_VERB: ${{ inputs.verb }}
+        STEP_ARGS: ${{ inputs.args }}
+        STEP_PAYLOAD_FILE: ${{ inputs.payload-file }}
       run: |
         set -euo pipefail
         [[ -n "${DEPLOY_GATEWAY_URL:-}" ]] || unset DEPLOY_GATEWAY_URL
         extra=()
-        if [[ -n '${{ inputs.payload-file }}' ]]; then
-          extra+=("@${{ inputs.payload-file }}")
+        if [[ -n "$STEP_PAYLOAD_FILE" ]]; then
+          extra+=("@$STEP_PAYLOAD_FILE")
         fi
-        read -r -a verb_args <<< '${{ inputs.args }}'
-        bash "${{ github.action_path }}/../../scripts/deployctl.sh" \
-          '${{ inputs.target }}' '${{ inputs.verb }}' "${verb_args[@]:-}" "${extra[@]:-}"
+        read -r -a verb_args <<< "$STEP_ARGS"
+        bash "${GITHUB_ACTION_PATH}/../../scripts/deployctl.sh" \
+          "$STEP_TARGET" "$STEP_VERB" ${verb_args[@]+"${verb_args[@]}"} ${extra[@]+"${extra[@]}"}
