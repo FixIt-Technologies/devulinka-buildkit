@@ -54,7 +54,10 @@ jobs:
           }
 
           failures=""
-          check devops-public https://status.fixit.dev.lovinka.com/ "status.fixit.dev.lovinka.com:443:${DEVOPS_IP}" \
+          # status.fixit.app is the PUBLIC prod status page on the devops box.
+          # (status.fixit.dev.lovinka.com is WireGuard-gated since 2026-07-29 —
+          # it 403s GitHub runners by design; never probe it from here.)
+          check devops-public https://status.fixit.app/ "status.fixit.app:443:${DEVOPS_IP}" \
             || failures="$failures devops(${DEVOPS_IP})"
           check prod-public https://api.fixit.app/api/v1/health "api.fixit.app:443:${PROD_IP}" \
             || failures="$failures prod(${PROD_IP})"
