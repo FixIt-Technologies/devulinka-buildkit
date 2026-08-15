@@ -141,6 +141,49 @@ decision log: `docs/specs/2026-07-24-runner-size-tiers-decisions.md` there.
 Slot classes (above) stay the admission layer — sizes bound one container,
 classes bound the host.
 
+## Deploying (v2)
+
+v2 adds the deploy lane: **no SSH keys in GitHub, ever.** A deploy job runs
+on your repo's bastion runner and talks to the deploy-gateway on the host,
+which knows which repo you are (from the runner's guest lease — not from
+anything the job claims), checks whether that repo may deploy the requested
+target, and runs the verb over SSH with a host-held key against the target
+server's forced-command dispatcher. Targets are logical names (`fixit-prod`,
+`eve-prod`) — where they point is estate configuration, not workflow text.
+
+```yaml
+jobs:
+  deploy:
+    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/deploy.yml@v2
+    secrets: inherit
+    with:
+      runs-on: '["self-hosted","fixit-bastion"]'
+      target: fixit-dev
+      environment: development   # binds GitHub environment protection + scoped secrets
+      prepare: |
+        bash scripts/deploy/render-env.sh dev-api > /tmp/payloads/env.development
+      plan: |
+        env-put development @/tmp/payloads/env.development
+        pull 111
+        migrate
+        roll-api
+```
+
+**Failure semantics** (read before wiring `migrate`-class verbs): a step
+exits with the *remote* verb's exit code — non-zero aborts the plan. Exit
+**70** means the gateway's nonce-authenticated status line never arrived:
+the deploy state is **UNKNOWN** (the verb may have half-run on the target).
+Never blindly retry an unknown-state step — inspect the target first
+(`version`/`probe` verbs, container state), then decide. The status line is
+authenticated with a per-request nonce, so dispatcher output cannot forge a
+verdict. Tests: `scripts/test-deployctl.sh`.
+
+À la carte: `actions/deploy-step@v2` (single verb) or
+`scripts/deployctl.sh` directly. Decision log:
+`docs/specs/2026-08-14-buildkit-v2-security-decisions.md`. Server side:
+`lovinka-devops-infra/apps/deploy-gateway/` (gateway) +
+`lovinka-infra/scripts/lovinka-ssh/` (dispatcher framework).
+
 ## Requirements on the runner
 
 - Devulinka self-hosted runner (DooD: host `/var/run/docker.sock` mounted,

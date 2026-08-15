@@ -1,0 +1,49 @@
+name: deploy-step
+description: >
+  Run one deploy verb against a logical target through the Devulinka
+  deploy-gateway. The job holds no SSH keys and no host addresses — the
+  gateway authenticates this runner by its bastion-guest lease and enforces
+  which repo may deploy which target.
+inputs:
+  target:
+    description: Logical target name, <project>-<env> (e.g. fixit-prod)
+    required: true
+  verb:
+    description: Dispatcher verb (e.g. version, pull, migrate)
+    required: true
+  args:
+    description: Space-separated verb arguments (optional)
+    required: false
+    default: ''
+  payload-file:
+    description: File streamed as the verb's payload (framed bytes+sha256)
+    required: false
+    default: ''
+  gateway-url:
+    description: Override the gateway endpoint (tests only)
+    required: false
+    default: ''
+runs:
+  using: composite
+  steps:
+    - name: deploy-step
+      shell: bash
+      # Inputs reach the script as environment variables only — never by
+      # template interpolation into the script source, so a value containing
+      # quotes or $(...) is data, not shell.
+      env:
+        DEPLOY_GATEWAY_URL: ${{ inputs.gateway-url }}
+        STEP_TARGET: ${{ inputs.target }}
+        STEP_VERB: ${{ inputs.verb }}
+        STEP_ARGS: ${{ inputs.args }}
+        STEP_PAYLOAD_FILE: ${{ inputs.payload-file }}
+      run: |
+        set -euo pipefail
+        [[ -n "${DEPLOY_GATEWAY_URL:-}" ]] || unset DEPLOY_GATEWAY_URL
+        extra=()
+        if [[ -n "$STEP_PAYLOAD_FILE" ]]; then
+          extra+=("@$STEP_PAYLOAD_FILE")
+        fi
+        read -r -a verb_args <<< "$STEP_ARGS"
+        bash "${GITHUB_ACTION_PATH}/../../scripts/deployctl.sh" \
+          "$STEP_TARGET" "$STEP_VERB" ${verb_args[@]+"${verb_args[@]}"} ${extra[@]+"${extra[@]}"}
