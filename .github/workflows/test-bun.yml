@@ -77,6 +77,14 @@ jobs:
         with:
           bun-version: ${{ inputs.bun-version }}
 
+      # PR jobs must not write the shared warm Bun cache (a runner volume that
+      # survives across jobs and repos): give them a job-local cache dir
+      # instead. Runner-level mount isolation is the real boundary for hostile
+      # code; this keeps ordinary PR runs from ever touching the shared path.
+      - name: Scope Bun cache for PR isolation
+        if: ${{ github.event_name == 'pull_request' }}
+        run: echo "BUN_INSTALL_CACHE_DIR=$RUNNER_TEMP/bun-cache-pr" >> "$GITHUB_ENV"
+
       - name: Install dependencies
         if: ${{ inputs.install }}
         working-directory: ${{ inputs.working-directory }}
@@ -91,6 +99,10 @@ jobs:
       # run wrote (node_modules, build caches) is removed even on failure, so
       # a later branch/tag job with clean:false can only ever consume caches
       # produced by trusted refs.
+      # No `|| true`: a failed clean means the PR left state a trusted job
+      # would inherit — that must be loud, not swallowed.
       - name: Post-job clean (PR isolation)
         if: ${{ always() && github.event_name == 'pull_request' }}
-        run: git clean -ffdx || true
+        run: |
+          git clean -ffdx
+          rm -rf "$RUNNER_TEMP/bun-cache-pr"
