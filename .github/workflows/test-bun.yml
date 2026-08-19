@@ -136,8 +136,13 @@ jobs:
       # PR isolation, second half: the pre-job clean stops a PR job from
       # INHERITING caches; this stops it from SEEDING them. Whatever the PR
       # run wrote (node_modules, build caches) is removed even on failure, so
-      # a later branch/tag job with clean:false can only ever consume caches
-      # produced by trusted refs.
+      # a later branch/tag job with clean:false consumes WORKSPACE caches
+      # produced only by trusted refs. This is DEFENSE-IN-DEPTH, not a
+      # boundary: the shared Bun volume mounts at ~/.bun (inside HOME), any
+      # write there by hostile code survives, and a detached process
+      # (`nohup … &`) outlives this step and can re-poison state after it
+      # reports green. The real boundary is runner-level mount/user
+      # isolation (devulinka-infra follow-up).
       # No `|| true`: a failed clean means the PR left state a trusted job
       # would inherit — that must be loud, not swallowed.
       - name: Post-job clean (PR isolation)
@@ -154,6 +159,9 @@ jobs:
           BASH_ENV: ''
           ENV: ''
           CLEAN_REEXEC: ''
+          # RUNNER_* should be runner-protected, but pin it anyway: it feeds
+          # an rm -rf (bounded by the /bun-cache-pr suffix).
+          RUNNER_TEMP: ${{ runner.temp }}
         run: |
           # Re-exec with a scrubbed environment before doing anything else:
           # kills every other PR-planted variable, including BASH_FUNC_*
@@ -173,20 +181,39 @@ jobs:
           # executable payloads that the next TRUSTED job (or this git clean)
           # would run. actions/checkout recreates the remote and its config on
           # the next job, so nuking the local config is safe here.
-          rm -rf .git/hooks
-          mkdir -p .git/hooks
-          rm -f .git/config
+          if [ -d .git ]; then
+            rm -rf .git/hooks
+            mkdir -p .git/hooks
+            rm -f .git/config
+          fi
           # PR code can also write persistent HOME state that later TRUSTED
           # jobs' tools read: git config/credentials, shell startup files,
-          # bun/npm config. Scrub the known config-injection surfaces in the
-          # runner user's REAL home from passwd — $HOME itself is
-          # PR-forgeable via GITHUB_ENV and was dropped by the re-exec.
-          # Trusted jobs rely on none of these files (checkout writes
-          # repo-local config; the shared warm caches live outside HOME).
-          TRUSTED_HOME="$(getent passwd "$(id -u)" | cut -d: -f6)"
-          rm -rf "$TRUSTED_HOME/.gitconfig" "$TRUSTED_HOME/.config/git" "$TRUSTED_HOME/.netrc" \
-                 "$TRUSTED_HOME/.bunfig.toml" "$TRUSTED_HOME/.npmrc" \
-                 "$TRUSTED_HOME/.bashrc" "$TRUSTED_HOME/.bash_profile" "$TRUSTED_HOME/.bash_login" "$TRUSTED_HOME/.profile"
+          # bun/npm/docker config. Scrub the known config-injection surfaces
+          # in the runner user's REAL home from passwd — $HOME itself is
+          # PR-forgeable via GITHUB_ENV and was dropped by the re-exec. A
+          # blocklist is never complete (defense-in-depth, see the step
+          # comment); ~/.docker matters most here: a planted cli-plugin or
+          # credsStore would be EXECUTED by the next trusted DooD build job.
+          # Guarded so a getent failure degrades to workspace-clean-only
+          # instead of aborting the -e shell before git clean.
+          TRUSTED_HOME="$(getent passwd "$(id -u)" | cut -d: -f6 || true)"
+          if [ -n "$TRUSTED_HOME" ]; then
+            rm -rf "$TRUSTED_HOME/.gitconfig" "$TRUSTED_HOME/.config/git" "$TRUSTED_HOME/.netrc" \
+                   "$TRUSTED_HOME/.bunfig.toml" "$TRUSTED_HOME/.npmrc" \
+                   "$TRUSTED_HOME/.docker/config.json" "$TRUSTED_HOME/.docker/cli-plugins" \
+                   "$TRUSTED_HOME/.local/bin" "$TRUSTED_HOME/.ssh" "$TRUSTED_HOME/.config/gh" \
+                   "$TRUSTED_HOME/.bashrc" "$TRUSTED_HOME/.bash_profile" "$TRUSTED_HOME/.bash_login" "$TRUSTED_HOME/.profile"
+          else
+            echo "::warning::getent gave no home dir — HOME scrub skipped, workspace clean still enforced"
+          fi
+          # A PR job can die AT checkout (budget cap, checkout failure) — no
+          # repo means nothing to clean, and mkdir'ing .git here would force
+          # the next checkout into a full re-clone.
+          if [ ! -d .git ]; then
+            echo "No repository in the workdir — nothing to clean."
+            rm -rf "$RUNNER_TEMP/bun-cache-pr"
+            exit 0
+          fi
           # retry once after re-opening permissions — the common way a PR run
           # makes its droppings undeletable; still loud if that also fails.
           git clean -ffdx || { chmod -R u+rwX . && git clean -ffdx; }

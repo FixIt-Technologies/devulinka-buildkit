@@ -71,7 +71,7 @@ cat <<EOF
     runs-on: [self-hosted, ${NAME}-ci]
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
