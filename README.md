@@ -179,7 +179,11 @@ authenticated with a per-request nonce, so dispatcher output cannot forge a
 verdict. Tests: `scripts/test-deployctl.sh`.
 
 À la carte: `actions/deploy-step@v2` (single verb) or
-`scripts/deployctl.sh` directly. Decision log:
+`scripts/deployctl.sh` directly. Every non-loopback request uses TLS with the
+gateway's public-key hash pinned in `scripts/deploy-gateway-curl.sh`; cleartext
+is accepted only for loopback test stubs. `scripts/deploy-whoami.sh` shares the
+same transport contract, so identity probes cannot silently downgrade.
+Decision log:
 `docs/specs/2026-08-14-buildkit-v2-security-decisions.md`. Server side:
 `lovinka-devops-infra/apps/deploy-gateway/` (gateway) +
 `lovinka-infra/scripts/lovinka-ssh/` (dispatcher framework).
