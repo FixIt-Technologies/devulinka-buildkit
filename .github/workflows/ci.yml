@@ -1,0 +1,23 @@
+name: ci
+
+# Guards the deploy lane's client: deployctl's validation, payload framing,
+# nonce authentication and unknown-state semantics regress silently without
+# this — the suite is self-contained (bash + python3 stub gateway), so it
+# runs on GitHub-hosted runners; no self-hosted capacity involved.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deployctl-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Run deployctl suite
+        run: bash scripts/test-deployctl.sh

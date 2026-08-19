@@ -1,0 +1,138 @@
+name: deploy (buildkit v2)
+
+# Reusable deploy lane — the paved path of buildkit v2.
+#
+# The consumer job never touches SSH: every step goes through deployctl to
+# the deploy-gateway on the Devulinka host, which authenticates this runner
+# by its bastion-guest lease, enforces repo→target policy host-side, and
+# runs the verb against the target's forced-command dispatcher with a key
+# that never existed in GitHub.
+#
+# Consuming (FixIt deploy-dev example):
+#
+#   deploy:
+#     uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/deploy.yml@v2
+#     secrets: inherit          # prepare renders env payloads from these
+#     with:
+#       runs-on: '["self-hosted","fixit-bastion"]'
+#       target: fixit-dev
+#       environment: development
+#       prepare: |
+#         bash scripts/deploy/render-env.sh dev-api > /tmp/payloads/env.development
+#       plan: |
+#         env-put development @/tmp/payloads/env.development
+#         pull 111
+#         migrate
+#         roll-api
+#
+# Plan grammar: one step per line — `verb [args...] [@payload-file]`.
+# Blank lines and #-comments are skipped. A failing step aborts the plan.
+# All inputs reach the shell as environment variables, never by template
+# interpolation into script source — a hostile input value is data here.
+#
+# Failure semantics: deployctl exits with the REMOTE verb's exit code; a
+# response that ends without the gateway's nonce-authenticated exit line is
+# exit 70 = deploy state UNKNOWN — never retry an unknown-state step blindly
+# (a migrate may have half-run); inspect the target first.
+
+on:
+  workflow_call:
+    inputs:
+      runs-on:
+        description: JSON array of runner labels — must target your repo's bastion scale set
+        required: true
+        type: string
+      target:
+        description: Logical deploy target, <project>-<env>
+        required: true
+        type: string
+      plan:
+        description: Deploy steps, one `verb [args...] [@payload-file]` per line
+        required: true
+        type: string
+      environment:
+        description: GitHub environment to bind the job to (protection rules + environment-scoped secrets). Strongly recommended for prod targets.
+        required: false
+        type: string
+        default: ''
+      prepare:
+        description: Bash run before the plan (render payload files; secrets/vars available as SECRETS_JSON / VARS_JSON)
+        required: false
+        type: string
+        default: ''
+      checkout-ref:
+        description: Ref to check out for prepare scripts (default = triggering ref)
+        required: false
+        type: string
+        default: ''
+      timeout-minutes:
+        description: Job timeout
+        required: false
+        type: number
+        default: 30
+
+# The job runs caller-provided prepare code with the secrets context in
+# reach — keep the ambient token as weak as possible. packages:read stays
+# because deploy plans hand the job token to the target's registry-login
+# verb (the VPS pulls the release images from GHCR with it); contents:read
+# covers both checkouts.
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    # Empty string = no environment binding (GitHub ignores an empty name).
+    environment: ${{ inputs.environment }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.checkout-ref }}
+
+      # Pin the client to THIS workflow file's own revision — a consumer
+      # pinning deploy.yml to a SHA gets the deployctl from that same SHA,
+      # not whatever the moving v2 tag points at today.
+      - name: Check out buildkit
+        uses: actions/checkout@v5
+        with:
+          repository: FixIt-Technologies/devulinka-buildkit
+          ref: ${{ github.job_workflow_sha }}
+          path: .buildkit-v2
+
+      - name: Verify gateway identity
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 10 "${DEPLOY_GATEWAY_URL:-http://192.168.251.1:8791}/v1/whoami"
+
+      - name: Prepare payloads
+        if: inputs.prepare != ''
+        env:
+          SECRETS_JSON: ${{ toJSON(secrets) }}
+          VARS_JSON: ${{ toJSON(vars) }}
+          PREPARE_SCRIPT: ${{ inputs.prepare }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p /tmp/payloads
+          bash -euo pipefail -c "$PREPARE_SCRIPT"
+
+      - name: Run deploy plan
+        env:
+          DEPLOY_TARGET: ${{ inputs.target }}
+          DEPLOY_PLAN: ${{ inputs.plan }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r line; do
+            line="${line#"${line%%[![:space:]]*}"}"
+            [[ -z $line || $line == \#* ]] && continue
+            printf '::group::deploy %s · %s\n' "$DEPLOY_TARGET" "$line"
+            read -r -a tokens <<< "$line"
+            bash .buildkit-v2/scripts/deployctl.sh "$DEPLOY_TARGET" "${tokens[@]}"
+            echo "::endgroup::"
+          done <<< "$DEPLOY_PLAN"
+
+      - name: Scrub payloads
+        if: always()
+        run: rm -rf /tmp/payloads

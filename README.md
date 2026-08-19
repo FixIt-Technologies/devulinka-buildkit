@@ -131,6 +131,49 @@ or a size label alone. Sizes bound one container; slot classes bound the host.
 Tier definitions live in the private infra repo
 (`lovinka-devops-infra/apps/gh-runner/docker-compose.yml`).
 
+## Deploying (v2)
+
+v2 adds the deploy lane: **no SSH keys in GitHub, ever.** A deploy job runs
+on your repo's bastion runner and talks to the deploy-gateway on the host,
+which knows which repo you are (from the runner's guest lease — not from
+anything the job claims), checks whether that repo may deploy the requested
+target, and runs the verb over SSH with a host-held key against the target
+server's forced-command dispatcher. Targets are logical names (`fixit-prod`,
+`eve-prod`) — where they point is estate configuration, not workflow text.
+
+```yaml
+jobs:
+  deploy:
+    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/deploy.yml@v2
+    secrets: inherit
+    with:
+      runs-on: '["self-hosted","fixit-bastion"]'
+      target: fixit-dev
+      environment: development   # binds GitHub environment protection + scoped secrets
+      prepare: |
+        bash scripts/deploy/render-env.sh dev-api > /tmp/payloads/env.development
+      plan: |
+        env-put development @/tmp/payloads/env.development
+        pull 111
+        migrate
+        roll-api
+```
+
+**Failure semantics** (read before wiring `migrate`-class verbs): a step
+exits with the *remote* verb's exit code — non-zero aborts the plan. Exit
+**70** means the gateway's nonce-authenticated status line never arrived:
+the deploy state is **UNKNOWN** (the verb may have half-run on the target).
+Never blindly retry an unknown-state step — inspect the target first
+(`version`/`probe` verbs, container state), then decide. The status line is
+authenticated with a per-request nonce, so dispatcher output cannot forge a
+verdict. Tests: `scripts/test-deployctl.sh`.
+
+À la carte: `actions/deploy-step@v2` (single verb) or
+`scripts/deployctl.sh` directly. Decision log:
+`docs/specs/2026-08-14-buildkit-v2-security-decisions.md`. Server side:
+`lovinka-devops-infra/apps/deploy-gateway/` (gateway) +
+`lovinka-infra/scripts/lovinka-ssh/` (dispatcher framework).
+
 ## Runner requirements
 
 - A Devulinka self-hosted runner: DooD (host `/var/run/docker.sock` mounted) and
@@ -148,20 +191,25 @@ Tier definitions live in the private infra repo
 |---|---|
 | `.github/workflows/build-image.yml` | reusable image build (login → attach builder → locked `buildx build` → optional size guard) |
 | `.github/workflows/test-bun.yml` | reusable Bun install + run lane |
+| `.github/workflows/deploy.yml` | reusable v2 deploy lane — prepare + plan of verbs through the host deploy-gateway (no SSH keys in GitHub) |
+| `.github/workflows/ci.yml` | this repo's own checks |
 | `.github/workflows/external-watchdog.yml` | this repo's own cron job, not part of the kit — a GitHub-hosted dead-man's switch that probes the fleet from outside and pages via Telegram. Must stay on `ubuntu-latest`: a self-hosted runner would die with the box it watches. |
 | `actions/build-lock/` | run one command holding a slot |
 | `actions/build-lock-acquire/`, `actions/build-lock-release/` | hold a slot across steps (background holder, 6 h failsafe) |
 | `actions/attach-builder/` | attach the job to the shared BuildKit daemon |
+| `actions/deploy-step/` | single deploy verb through the gateway (à la carte v2) |
 | `scripts/bk-lock.sh` | the semaphore itself — everything above is a wrapper |
+| `scripts/deployctl.sh`, `scripts/test-deployctl.sh` | the deploy-gateway client and its test suite |
 | `classes.conf` | slot capacity, the single source of truth |
 | `blueprint/new-project.sh` | onboarding generator (below) |
 
 ## Development
 
-There is no build, no dependency install and no test suite here — the repo is
-YAML plus two Bash scripts (`scripts/bk-lock.sh`, `blueprint/new-project.sh`).
-Changes are validated by the consumers that call them, so keep them small and
-watch the first consuming run.
+There is no build and no dependency install here — the repo is YAML plus a
+handful of Bash scripts (`scripts/bk-lock.sh`, `scripts/deployctl.sh` with
+`scripts/test-deployctl.sh` as its test suite, `blueprint/new-project.sh`).
+Everything else is validated by the consumers that call it, so keep changes
+small and watch the first consuming run.
 
 **Changing capacity or adding a class:** edit `classes.conf`, merge, then move
 the major tag:
