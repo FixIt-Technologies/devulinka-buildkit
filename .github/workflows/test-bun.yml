@@ -80,8 +80,12 @@ jobs:
       # PR-isolation cleanup.
       - name: Enforce step-budget cap
         if: ${{ inputs.timeout-minutes > 150 }}
+        env:
+          # Inputs never land in shell source directly (host-root run blocks);
+          # the number rides env and is quoted on expansion.
+          TIMEOUT_MINUTES: ${{ inputs.timeout-minutes }}
         run: |
-          echo "::error::timeout-minutes=${{ inputs.timeout-minutes }} exceeds the 150-minute cap (2 steps must fit under the 350-minute job backstop with cleanup headroom)"
+          echo "::error::timeout-minutes=${TIMEOUT_MINUTES} exceeds the 150-minute cap (2 steps must fit under the 350-minute job backstop with cleanup headroom)"
           exit 1
 
       - uses: actions/checkout@v5
@@ -135,15 +139,19 @@ jobs:
           PATH: /usr/local/bin:/usr/bin:/bin
           # Step-level env beats GITHUB_ENV, so a PR step cannot point this
           # shell's startup file at its own script (non-interactive bash
-          # sources BASH_ENV; sh sources ENV).
+          # sources BASH_ENV; sh sources ENV) — and cannot forge the re-exec
+          # sentinel to skip the env scrub.
           BASH_ENV: ''
           ENV: ''
+          CLEAN_REEXEC: ''
         run: |
           # Re-exec with a scrubbed environment before doing anything else:
           # kills every other PR-planted variable, including BASH_FUNC_*
-          # exported-function shims that would shadow git/chmod.
+          # exported-function shims that would shadow git/chmod. HOME is
+          # deliberately NOT carried over — a PR step can rewrite it via
+          # GITHUB_ENV; the trusted home is re-derived from passwd below.
           if [ -z "${CLEAN_REEXEC:-}" ]; then
-            exec /usr/bin/env -i CLEAN_REEXEC=1 PATH="$PATH" HOME="$HOME" RUNNER_TEMP="$RUNNER_TEMP" /bin/bash --noprofile --norc -eo pipefail "$0"
+            exec /usr/bin/env -i CLEAN_REEXEC=1 PATH="$PATH" RUNNER_TEMP="$RUNNER_TEMP" /bin/bash --noprofile --norc -eo pipefail "$0"
           fi
           # Re-open permissions FIRST, .git included: `chmod 000 .git` by PR
           # code would otherwise abort the -e shell on the very first rm,
@@ -160,12 +168,15 @@ jobs:
           rm -f .git/config
           # PR code can also write persistent HOME state that later TRUSTED
           # jobs' tools read: git config/credentials, shell startup files,
-          # bun/npm config. Scrub the known config-injection surfaces —
-          # trusted jobs rely on none of them (checkout writes repo-local
-          # config; the shared warm caches live outside HOME).
-          rm -rf "$HOME/.gitconfig" "$HOME/.config/git" "$HOME/.netrc" \
-                 "$HOME/.bunfig.toml" "$HOME/.npmrc" \
-                 "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"
+          # bun/npm config. Scrub the known config-injection surfaces in the
+          # runner user's REAL home from passwd — $HOME itself is
+          # PR-forgeable via GITHUB_ENV and was dropped by the re-exec.
+          # Trusted jobs rely on none of these files (checkout writes
+          # repo-local config; the shared warm caches live outside HOME).
+          TRUSTED_HOME="$(getent passwd "$(id -u)" | cut -d: -f6)"
+          rm -rf "$TRUSTED_HOME/.gitconfig" "$TRUSTED_HOME/.config/git" "$TRUSTED_HOME/.netrc" \
+                 "$TRUSTED_HOME/.bunfig.toml" "$TRUSTED_HOME/.npmrc" \
+                 "$TRUSTED_HOME/.bashrc" "$TRUSTED_HOME/.bash_profile" "$TRUSTED_HOME/.bash_login" "$TRUSTED_HOME/.profile"
           # retry once after re-opening permissions — the common way a PR run
           # makes its droppings undeletable; still loud if that also fails.
           git clean -ffdx || { chmod -R u+rwX . && git clean -ffdx; }
