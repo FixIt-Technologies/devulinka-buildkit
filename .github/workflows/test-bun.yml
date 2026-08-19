@@ -104,5 +104,7 @@ jobs:
       - name: Post-job clean (PR isolation)
         if: ${{ always() && github.event_name == 'pull_request' }}
         run: |
-          git clean -ffdx
+          # retry once after re-opening permissions — the common way a PR run
+          # makes its droppings undeletable; still loud if that also fails.
+          git clean -ffdx || { chmod -R u+rwX . && git clean -ffdx; }
           rm -rf "$RUNNER_TEMP/bun-cache-pr"

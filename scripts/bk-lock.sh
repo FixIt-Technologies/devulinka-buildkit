@@ -21,7 +21,8 @@
 # the box either. --priority is ignored for this class.
 #
 # e2e (full compose stacks + browser): 8 slots (e1-e8), pressure-gated like
-# build. --priority is ignored for this class.
+# build. --priority grants no extra slot here (no reserved slot) but still
+# BYPASSES the pressure gate, like any gated class.
 #
 # Locks are plain flock(2) files under $BK_LOCK_DIR. Runner containers all
 # bind-mount the host's /var/lock, so the same inode is contended across every
