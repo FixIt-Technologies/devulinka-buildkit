@@ -120,7 +120,26 @@ jobs:
           # can append to GITHUB_PATH — the cleanup must resolve git/chmod
           # from system dirs, never from a PR-planted shim.
           PATH: /usr/local/bin:/usr/bin:/bin
+          # Step-level env beats GITHUB_ENV, so a PR step cannot point this
+          # shell's startup file at its own script (non-interactive bash
+          # sources BASH_ENV; sh sources ENV).
+          BASH_ENV: ''
+          ENV: ''
         run: |
+          # Re-exec with a scrubbed environment before doing anything else:
+          # kills every other PR-planted variable, including BASH_FUNC_*
+          # exported-function shims that would shadow git/chmod.
+          if [ -z "${CLEAN_REEXEC:-}" ]; then
+            exec /usr/bin/env -i CLEAN_REEXEC=1 PATH="$PATH" HOME="$HOME" RUNNER_TEMP="$RUNNER_TEMP" /bin/bash --noprofile --norc -eo pipefail "$0"
+          fi
+          # Strip PR-controllable git metadata BEFORE the first git call:
+          # hooks, hooksPath/fsmonitor/filter config in .git/config can carry
+          # executable payloads that the next TRUSTED job (or this git clean)
+          # would run. actions/checkout recreates the remote and its config on
+          # the next job, so nuking the local config is safe here.
+          rm -rf .git/hooks
+          mkdir -p .git/hooks
+          rm -f .git/config
           # retry once after re-opening permissions — the common way a PR run
           # makes its droppings undeletable; still loud if that also fails.
           git clean -ffdx || { chmod -R u+rwX . && git clean -ffdx; }
