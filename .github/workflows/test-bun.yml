@@ -85,3 +85,12 @@ jobs:
       - name: Run
         working-directory: ${{ inputs.working-directory }}
         run: ${{ inputs.run }}
+
+      # PR isolation, second half: the pre-job clean stops a PR job from
+      # INHERITING caches; this stops it from SEEDING them. Whatever the PR
+      # run wrote (node_modules, build caches) is removed even on failure, so
+      # a later branch/tag job with clean:false can only ever consume caches
+      # produced by trusted refs.
+      - name: Post-job clean (PR isolation)
+        if: ${{ always() && github.event_name == 'pull_request' }}
+        run: git clean -ffdx || true

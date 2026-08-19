@@ -26,8 +26,8 @@
 
 ## Verifying a change
 
-There is no test suite, no dependency install, no lint here. `bash -n` and
-`shellcheck` on `scripts/bk-lock.sh` and `blueprint/new-project.sh` are the only
-local checks that exist; anything deeper requires an actual consumer job on a
-Devulinka runner. Do not invent a `bun`/`npm` command for this repo — it has no
+There is no dependency install and no lint here. Local checks: `bash -n` /
+`shellcheck` on the shell scripts, plus `scripts/test-deployctl.sh` — the
+deploy-lane test suite, which `.github/workflows/ci.yml` also runs. Anything
+deeper requires an actual consumer job on a Devulinka runner. Do not invent a `bun`/`npm` command for this repo — it has no
 package manifest.
