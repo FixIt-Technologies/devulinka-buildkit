@@ -20,8 +20,9 @@
 # queues behind image builds and a burst of light checks cannot swamp
 # the box either. --priority is ignored for this class.
 #
-# e2e (full compose stacks + browser): 3 slots (e1-e3), pressure-gated like
-# build. --priority is ignored for this class.
+# e2e (full compose stacks + browser): slot count in classes.conf, pressure-gated like
+# build. --priority grants no extra slot here (no reserved slot) but still
+# BYPASSES the pressure gate, like any gated class.
 #
 # Locks are plain flock(2) files under $BK_LOCK_DIR. Runner containers all
 # bind-mount the host's /var/lock, so the same inode is contended across every
@@ -77,7 +78,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLASSES_FILE="${BK_CLASSES_FILE:-$SCRIPT_DIR/../classes.conf}"
 BUILTIN_CLASSES='build|g1,g2,g3,g4|p3|1
 small|s1,s2,s3,s4||0
-e2e|e1,e2,e3||1'
+e2e|e1,e2,e3,e4,e5,e6,e7,e8||1'
 
 CLASS_LINE=""
 KNOWN_CLASSES=""

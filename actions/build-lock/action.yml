@@ -1,8 +1,8 @@
 name: bk-build-lock
 description: >
   Run a command under one of the Devulinka host slots (classes defined in
-  classes.conf — build: 4 general + 1 priority-reserved; small: 4 separate
-  slots for cheap CI checks; e2e: 3 slots for full compose+browser stacks).
+  classes.conf — 'build' (heavy image builds), 'small' (cheap CI checks),
+  'e2e' (full compose+browser stacks); capacity lives ONLY in classes.conf).
   Gives a GLOBAL max-parallel cap across repos of different owners. Must run
   on a Devulinka self-hosted runner (needs the /var/lock host bind-mount).
 inputs:
@@ -13,7 +13,9 @@ inputs:
     description: >
       'true' lets this build take the reserved priority slot when all
       general slots are busy. Reserved for deploy-critical builds (FixIt
-      deploys, deployik). Ignored for class 'small'.
+      deploys, deployik). Takes the reserved slot where the class has one (build)
+      and bypasses the pressure gate for gated classes (build, e2e); fully
+      ignored for 'small'.
     default: 'false'
   class:
     description: >
