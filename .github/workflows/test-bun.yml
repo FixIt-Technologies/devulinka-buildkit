@@ -17,6 +17,11 @@ name: bk / test-bun
 # volume (runner-bun → /home/runner/.bun) that survives across jobs and
 # repos, so installs are warm by default — no actions/cache round-trip.
 
+# The lane needs nothing beyond reading the repo — never inherit a caller's
+# wider token (pull_request_target hands out a write-capable one).
+permissions:
+  contents: read
+
 on:
   workflow_call:
     inputs:
@@ -121,7 +126,12 @@ jobs:
       - name: Run
         working-directory: ${{ inputs.working-directory }}
         timeout-minutes: ${{ inputs.timeout-minutes }}
-        run: ${{ inputs.run }}
+        env:
+          # The input IS a script by contract, but it still rides env instead
+          # of being interpolated into shell source: quotes/backticks in the
+          # caller's snippet cannot mangle THIS workflow's generated step file.
+          RUN_SCRIPT: ${{ inputs.run }}
+        run: eval "$RUN_SCRIPT"
 
       # PR isolation, second half: the pre-job clean stops a PR job from
       # INHERITING caches; this stops it from SEEDING them. Whatever the PR

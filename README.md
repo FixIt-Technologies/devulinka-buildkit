@@ -54,6 +54,8 @@ jobs:
       working-directory: web
       bun-version: '1.3.9'    # keep in sync with your packageManager field
       clean: false            # keep node_modules / .next/cache / *.tsbuildinfo warm
+                              # (branch/tag jobs only — PR jobs ALWAYS clean, the
+                              # input is deliberately ignored there for isolation)
       run: |
         bunx tsc --noEmit
         bun run test

@@ -20,7 +20,7 @@
 # queues behind image builds and a burst of light checks cannot swamp
 # the box either. --priority is ignored for this class.
 #
-# e2e (full compose stacks + browser): 8 slots (e1-e8), pressure-gated like
+# e2e (full compose stacks + browser): slot count in classes.conf, pressure-gated like
 # build. --priority grants no extra slot here (no reserved slot) but still
 # BYPASSES the pressure gate, like any gated class.
 #
