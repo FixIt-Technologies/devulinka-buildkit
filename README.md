@@ -95,11 +95,14 @@ Slot classes live in **`classes.conf`** at the repo root — one line per class,
 `name|slots|priority_slots|pressure_gate`. That file is the only place host
 capacity is defined; `scripts/bk-lock.sh` reads it at job time.
 
-| Class | Slots | Priority extra | Pressure-gated | For |
-|-------|-------|----------------|----------------|-----|
-| `build` | g1–g4 | p3 | yes | heavy image builds |
-| `small` | s1–s4 | — | no | cheap checks: typecheck, lint, quick tests |
-| `e2e` | e1–e8 | — | yes | full compose stacks + browser suites |
+| Class | Priority slot | Pressure-gated | For |
+|-------|---------------|----------------|-----|
+| `build` | yes | yes | heavy image builds |
+| `small` | — | no | cheap checks: typecheck, lint, quick tests |
+| `e2e` | — | yes | full compose stacks + browser suites |
+
+Slot names and counts live ONLY in `classes.conf` — read it for the current
+capacity; this table describes semantics, not numbers.
 
 - A `--priority` request tries the general slots first and falls back to the
   reserved one, so a deploy-critical build is never queued behind more than one

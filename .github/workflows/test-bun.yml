@@ -75,6 +75,9 @@ jobs:
         with:
           ref: ${{ inputs.ref }}
           clean: ${{ inputs.clean || startsWith(github.event_name, 'pull_request') }}
+          # The test lane never pushes; on pull_request_target the default
+          # token can be write-capable — never leave it in .git/config.
+          persist-credentials: false
 
       - name: Clean untracked files (keep dependency caches)
         if: ${{ !inputs.clean && !startsWith(github.event_name, 'pull_request') }}
@@ -112,6 +115,11 @@ jobs:
       # would inherit — that must be loud, not swallowed.
       - name: Post-job clean (PR isolation)
         if: ${{ always() && startsWith(github.event_name, 'pull_request') }}
+        env:
+          # Pinned PATH: the caller-controlled run step executes PR code that
+          # can append to GITHUB_PATH — the cleanup must resolve git/chmod
+          # from system dirs, never from a PR-planted shim.
+          PATH: /usr/local/bin:/usr/bin:/bin
         run: |
           # retry once after re-opening permissions — the common way a PR run
           # makes its droppings undeletable; still loud if that also fails.

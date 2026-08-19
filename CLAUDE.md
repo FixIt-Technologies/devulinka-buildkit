@@ -10,6 +10,8 @@
   secrets.
 - **A merge is not a release.** Consumers pin `@v1`, so nothing you merge
   reaches them until the tag moves: `git tag -f v1 && git push -f origin v1`.
+  That force-push is sanctioned for the MAJOR TAG only (the standard moving-tag
+  release for actions) — never for branches — and only from a green `main`.
   Say so when you finish a change; do not move the tag without being asked.
 - **Capacity lives in `classes.conf` only.** Editing slot counts anywhere else
   is a bug. `scripts/bk-lock.sh` also carries a `BUILTIN_CLASSES` fallback for
