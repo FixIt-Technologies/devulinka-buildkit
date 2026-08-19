@@ -50,7 +50,9 @@ on:
           Pass false to keep untracked build caches (node_modules, .next/cache,
           *.tsbuildinfo) on the persistent runner workdir; a scoped git clean
           still removes every other untracked file. Default true = the old
-          full `git clean -ffdx` behavior.
+          full `git clean -ffdx` behavior. Ignored (forced clean) on
+          pull_request events: a PR job must never inherit — or seed — caches
+          on the persistent workdir a trusted branch/tag job later reuses.
         type: boolean
         default: true
       timeout-minutes:
@@ -65,10 +67,10 @@ jobs:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
-          clean: ${{ inputs.clean }}
+          clean: ${{ inputs.clean || github.event_name == 'pull_request' }}
 
       - name: Clean untracked files (keep dependency caches)
-        if: ${{ !inputs.clean }}
+        if: ${{ !inputs.clean && github.event_name != 'pull_request' }}
         run: git clean -ffdx -e node_modules -e '**/.next/cache' -e '*.tsbuildinfo'
 
       - uses: oven-sh/setup-bun@v2
