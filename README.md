@@ -103,7 +103,9 @@ capacity is defined; `scripts/bk-lock.sh` reads it at job time.
 
 - A `--priority` request tries the general slots first and falls back to the
   reserved one, so a deploy-critical build is never queued behind more than one
-  running build. Classes with no priority slot ignore the flag.
+  running build. A class with no reserved slot gains no extra capacity from the
+  flag — but for pressure-gated classes (build, e2e) `--priority` still
+  bypasses the pressure gate; only the ungated `small` ignores it entirely.
 - Pressure-gated classes additionally postpone admission (within their timeout)
   while the host is loaded: 1-minute loadavg ≥ `BK_LOAD_MAX` (default 85% of
   `nproc`) or `MemAvailable` < `BK_MEM_MIN_GB` (default 12 GiB). `--priority`
@@ -245,8 +247,8 @@ to `@v2`; everything else moves `v1`.
   deletion, one approving review **from the code owner** (`.github/CODEOWNERS`),
   and stale reviews are dismissed on push. Merge, squash and rebase are all
   allowed.
-- Branch naming follows `work/<slug>` (e.g. `work/ci-speed`), with `feat/<slug>`
-  also in use.
+- Branch naming follows `work/<slug>` (e.g. `work/ci-speed`). (Some older
+  branches used `feat/<slug>`; new work sticks to `work/`.)
 - Conventional Commits, scoped to the piece you touched: `feat(classes):`,
   `feat(bk-lock):`, `docs+blueprint:`.
 - This is public and consumed cross-owner. Never add a secret, an internal
