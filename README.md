@@ -36,7 +36,9 @@ jobs:
 
 Other inputs: `context` (default `.`), `ref`, `tags` (newline-separated),
 `build-args` (newline-separated `KEY=VALUE`), `push` (default true), `builder`,
-`lock-timeout` (default 2700s). It outputs `image-ref` (the first pushed ref).
+`lock-timeout` (default 2700s). It outputs `image-ref` — the first
+fully-qualified image ref, which is computed (and populated) even with
+`push: false`; it has actually been pushed only when `push` is true.
 Registry login defaults to `github.actor` + `github.token`; pass the optional
 `registry-username` / `registry-password` secrets when the target GHCR package
 does not grant the calling repo's token write access.
@@ -157,8 +159,9 @@ Tier definitions live in the private infra repo
 ## Development
 
 There is no build, no dependency install and no test suite here — the repo is
-YAML plus one Bash script. Changes are validated by the consumers that call
-them, so keep them small and watch the first consuming run.
+YAML plus two Bash scripts (`scripts/bk-lock.sh`, `blueprint/new-project.sh`).
+Changes are validated by the consumers that call them, so keep them small and
+watch the first consuming run.
 
 **Changing capacity or adding a class:** edit `classes.conf`, merge, then move
 the major tag:

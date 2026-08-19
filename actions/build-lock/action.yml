@@ -13,7 +13,7 @@ inputs:
     description: >
       'true' lets this build take the reserved priority slot when all
       general slots are busy. Reserved for deploy-critical builds (FixIt
-      deploys, deployik). Ignored for class 'small'.
+      deploys, deployik). Ignored for classes 'small' and 'e2e' (no priority slot).
     default: 'false'
   class:
     description: >
