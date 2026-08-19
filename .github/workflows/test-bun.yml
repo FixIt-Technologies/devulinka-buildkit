@@ -67,8 +67,9 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runs-on) }}
     # The caller's budget bounds the EXPENSIVE steps (install + run) below, not
     # the job: a job-level timeout would kill the always() PR-isolation cleanup
-    # with them. The job keeps a wide fixed backstop for the cheap steps.
-    timeout-minutes: 60
+    # with them. The job backstop sits far above any realistic install+run sum
+    # (each step is individually capped), so cleanup always has headroom.
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v5
         with:
