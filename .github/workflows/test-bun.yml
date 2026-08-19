@@ -56,21 +56,27 @@ on:
         type: boolean
         default: true
       timeout-minutes:
+        description: >-
+          Bounds the install and run steps EACH (not the job — the job keeps a
+          fixed 60-minute backstop so the PR-isolation cleanup always runs).
         type: number
         default: 30
 
 jobs:
   test:
     runs-on: ${{ fromJSON(inputs.runs-on) }}
-    timeout-minutes: ${{ inputs.timeout-minutes }}
+    # The caller's budget bounds the EXPENSIVE steps (install + run) below, not
+    # the job: a job-level timeout would kill the always() PR-isolation cleanup
+    # with them. The job keeps a wide fixed backstop for the cheap steps.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
-          clean: ${{ inputs.clean || github.event_name == 'pull_request' }}
+          clean: ${{ inputs.clean || startsWith(github.event_name, 'pull_request') }}
 
       - name: Clean untracked files (keep dependency caches)
-        if: ${{ !inputs.clean && github.event_name != 'pull_request' }}
+        if: ${{ !inputs.clean && !startsWith(github.event_name, 'pull_request') }}
         run: git clean -ffdx -e node_modules -e '**/.next/cache' -e '*.tsbuildinfo'
 
       - uses: oven-sh/setup-bun@v2
@@ -82,16 +88,18 @@ jobs:
       # instead. Runner-level mount isolation is the real boundary for hostile
       # code; this keeps ordinary PR runs from ever touching the shared path.
       - name: Scope Bun cache for PR isolation
-        if: ${{ github.event_name == 'pull_request' }}
+        if: ${{ startsWith(github.event_name, 'pull_request') }}
         run: echo "BUN_INSTALL_CACHE_DIR=$RUNNER_TEMP/bun-cache-pr" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         if: ${{ inputs.install }}
         working-directory: ${{ inputs.working-directory }}
+        timeout-minutes: ${{ inputs.timeout-minutes }}
         run: bun install ${{ inputs.frozen-lockfile && '--frozen-lockfile' || '' }}
 
       - name: Run
         working-directory: ${{ inputs.working-directory }}
+        timeout-minutes: ${{ inputs.timeout-minutes }}
         run: ${{ inputs.run }}
 
       # PR isolation, second half: the pre-job clean stops a PR job from
@@ -102,7 +110,7 @@ jobs:
       # No `|| true`: a failed clean means the PR left state a trusted job
       # would inherit — that must be loud, not swallowed.
       - name: Post-job clean (PR isolation)
-        if: ${{ always() && github.event_name == 'pull_request' }}
+        if: ${{ always() && startsWith(github.event_name, 'pull_request') }}
         run: |
           # retry once after re-opening permissions — the common way a PR run
           # makes its droppings undeletable; still loud if that also fails.
