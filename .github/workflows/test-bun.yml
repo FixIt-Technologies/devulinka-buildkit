@@ -58,7 +58,7 @@ on:
       timeout-minutes:
         description: >-
           Bounds the install and run steps EACH (not the job — the job keeps a
-          fixed 60-minute backstop so the PR-isolation cleanup always runs).
+          wide fixed backstop so the PR-isolation cleanup always runs).
         type: number
         default: 30
 

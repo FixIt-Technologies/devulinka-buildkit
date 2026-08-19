@@ -14,7 +14,7 @@ name: bk / build-image
 # The job MUST land on a Devulinka runner (DooD + /var/lock bind-mount).
 # Caching comes from the persistent shared builder state on /mnt/data —
 # no cache-from/cache-to needed. Concurrency is capped host-wide by the
-# bk-build-lock build slots (4 general + 1 priority-reserved).
+# bk-build-lock build slots (capacity defined only in classes.conf).
 
 on:
   workflow_call:
