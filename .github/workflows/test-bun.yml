@@ -58,7 +58,9 @@ on:
       timeout-minutes:
         description: >-
           Bounds the install and run steps EACH (not the job — the job keeps a
-          wide fixed backstop so the PR-isolation cleanup always runs).
+          wide fixed backstop so the PR-isolation cleanup always runs). Capped
+          at 150: two full steps must still leave the cleanup headroom under
+          the 350-minute job backstop.
         type: number
         default: 30
 
@@ -71,6 +73,17 @@ jobs:
     # (each step is individually capped), so cleanup always has headroom.
     timeout-minutes: 350
     steps:
+      # GH expressions have no min()/arithmetic, so the budget invariant
+      # (2 × step-timeout + cleanup < job backstop) is enforced as a hard
+      # fail-fast: a caller asking for more than 150 min/step could otherwise
+      # burn the whole 350-min backstop in install+run and starve the always()
+      # PR-isolation cleanup.
+      - name: Enforce step-budget cap
+        if: ${{ inputs.timeout-minutes > 150 }}
+        run: |
+          echo "::error::timeout-minutes=${{ inputs.timeout-minutes }} exceeds the 150-minute cap (2 steps must fit under the 350-minute job backstop with cleanup headroom)"
+          exit 1
+
       - uses: actions/checkout@v5
         with:
           ref: ${{ inputs.ref }}
@@ -132,6 +145,11 @@ jobs:
           if [ -z "${CLEAN_REEXEC:-}" ]; then
             exec /usr/bin/env -i CLEAN_REEXEC=1 PATH="$PATH" HOME="$HOME" RUNNER_TEMP="$RUNNER_TEMP" /bin/bash --noprofile --norc -eo pipefail "$0"
           fi
+          # Re-open permissions FIRST, .git included: `chmod 000 .git` by PR
+          # code would otherwise abort the -e shell on the very first rm,
+          # before any recovery ran. Best-effort (weird symlinks may error);
+          # every strict operation below stays loud.
+          chmod -R u+rwX . 2>/dev/null || true
           # Strip PR-controllable git metadata BEFORE the first git call:
           # hooks, hooksPath/fsmonitor/filter config in .git/config can carry
           # executable payloads that the next TRUSTED job (or this git clean)
@@ -140,6 +158,14 @@ jobs:
           rm -rf .git/hooks
           mkdir -p .git/hooks
           rm -f .git/config
+          # PR code can also write persistent HOME state that later TRUSTED
+          # jobs' tools read: git config/credentials, shell startup files,
+          # bun/npm config. Scrub the known config-injection surfaces —
+          # trusted jobs rely on none of them (checkout writes repo-local
+          # config; the shared warm caches live outside HOME).
+          rm -rf "$HOME/.gitconfig" "$HOME/.config/git" "$HOME/.netrc" \
+                 "$HOME/.bunfig.toml" "$HOME/.npmrc" \
+                 "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"
           # retry once after re-opening permissions — the common way a PR run
           # makes its droppings undeletable; still loud if that also fails.
           git clean -ffdx || { chmod -R u+rwX . && git clean -ffdx; }
