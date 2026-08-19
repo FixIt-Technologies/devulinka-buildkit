@@ -100,6 +100,8 @@ bash "$deployctl" fixit-dev pull 'v1 --evil' >/dev/null 2>&1; rc=$?
 check "space in arg rejected" 2 "$rc"
 bash "$deployctl" 'Fixit;Prod' version >/dev/null 2>&1; rc=$?
 check "bad target rejected" 2 "$rc"
+DEPLOY_GATEWAY_URL=http://192.168.251.1:8791 bash "$deployctl" fixit-dev version >/dev/null 2>&1; rc=$?
+check "non-loopback cleartext gateway rejected" 78 "$rc"
 bash "$deployctl" fixit-dev pull '@a' '@b' >/dev/null 2>&1; rc=$?
 check "second payload rejected" 2 "$rc"
 ln -s /etc/hosts "$tmp/link"

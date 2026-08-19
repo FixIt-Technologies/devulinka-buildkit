@@ -19,7 +19,11 @@
 # have half-run) — inspect the target first.
 set -euo pipefail
 
-gateway=${DEPLOY_GATEWAY_URL:-http://192.168.251.1:8791}
+here=$(cd "$(dirname "$0")" && pwd)
+# shellcheck disable=SC1091
+. "$here/deploy-gateway-curl.sh"
+# shellcheck disable=SC2154
+gateway=$deploy_gateway_url
 sentinel='@@deploy-gateway-exit@@'
 
 if (( $# < 2 )); then
@@ -93,7 +97,7 @@ code_file=$(mktemp)
 trap 'rm -f "$code_file"' EXIT
 
 set +e
-curl "${curl_args[@]}" "$url" | awk -v out="$code_file" -v sentinel="$sentinel" -v nonce="$nonce" '
+deploy_gateway_curl "${curl_args[@]}" "$url" | awk -v out="$code_file" -v sentinel="$sentinel" -v nonce="$nonce" '
   # Every nonce-bearing status line is consumed (never leaked as output);
   # only a numeric 0-255 code counts as a verdict — anything else leaves
   # code empty and the client exits 70 (unknown state).
