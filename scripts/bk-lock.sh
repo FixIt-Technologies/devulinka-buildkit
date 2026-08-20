@@ -9,14 +9,14 @@
 #
 # Shipped classes:
 #
-# build (heavy image builds): 4 general (g1-g4) + 1 priority-reserved (p3).
-#   normal builds   → compete for g1-g4 only
-#   priority builds → may take g1-g4, and fall back to p3 (so a priority
+# build (heavy image builds): 5 general (g1-g5) + 1 priority-reserved (p3).
+#   normal builds   → compete for g1-g5 only
+#   priority builds → may take g1-g5, and fall back to p3 (so a priority
 #                     build — FixIt/deployik deploys — is never behind more
 #                     than one running build)
 #
-# small (cheap CI checks — typecheck, lint, quick bun tests): 4 slots
-# (s1-s4), fully separate from the build class so a light check never
+# small (cheap CI checks — typecheck, lint, quick bun tests): 6 slots
+# (s1-s6), fully separate from the build class so a light check never
 # queues behind image builds and a burst of light checks cannot swamp
 # the box either. --priority is ignored for this class.
 #
@@ -76,9 +76,9 @@ mkdir -p "$LOCK_DIR"
 # the shipped file so a bare script copy keeps working.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLASSES_FILE="${BK_CLASSES_FILE:-$SCRIPT_DIR/../classes.conf}"
-BUILTIN_CLASSES='build|g1,g2,g3,g4|p3|1
-small|s1,s2,s3,s4||0
-e2e|e1,e2,e3,e4,e5,e6,e7,e8||1'
+BUILTIN_CLASSES='build|g1,g2,g3,g4,g5|p3|1
+small|s1,s2,s3,s4,s5,s6||0
+e2e|e1,e2,e3,e4,e5,e6,e7,e8,e9,e10||1'
 
 CLASS_LINE=""
 KNOWN_CLASSES=""
