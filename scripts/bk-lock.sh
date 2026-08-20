@@ -76,9 +76,9 @@ mkdir -p "$LOCK_DIR"
 # the shipped file so a bare script copy keeps working.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLASSES_FILE="${BK_CLASSES_FILE:-$SCRIPT_DIR/../classes.conf}"
-BUILTIN_CLASSES='build|g1,g2,g3,g4|p3|1
-small|s1,s2,s3,s4||0
-e2e|e1,e2,e3,e4,e5,e6,e7,e8||1'
+BUILTIN_CLASSES='build|g1,g2,g3,g4,g5|p3|1
+small|s1,s2,s3,s4,s5,s6||0
+e2e|e1,e2,e3,e4,e5,e6,e7,e8,e9,e10||1'
 
 CLASS_LINE=""
 KNOWN_CLASSES=""
