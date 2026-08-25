@@ -101,10 +101,11 @@ jobs:
           ref: ${{ github.job_workflow_sha }}
           path: .buildkit-v2
 
+      # deploy-whoami.sh sources deploy-gateway-curl.sh: HTTPS with the
+      # gateway's pinned SPKI (the gateway is TLS-only since 2026-08-19; a
+      # cleartext curl gets HTTP 400 before any deploy step).
       - name: Verify gateway identity
-        run: |
-          set -euo pipefail
-          curl -fsS --max-time 10 "${DEPLOY_GATEWAY_URL:-http://192.168.251.1:8791}/v1/whoami"
+        run: bash .buildkit-v2/scripts/deploy-whoami.sh
 
       - name: Prepare payloads
         if: inputs.prepare != ''
