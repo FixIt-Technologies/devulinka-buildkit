@@ -90,7 +90,7 @@ fi
 
 cat <<EOF
   test:
-    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/test-bun.yml@v1
+    uses: henderson-tech/devulinka-buildkit/.github/workflows/test-bun.yml@v1
     with:
       runs-on: '["self-hosted","${NAME}-ci"]'
       bun-version: '1.3.9'
@@ -104,7 +104,7 @@ cat <<EOF
     permissions:
       contents: read
       packages: write
-    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/build-image.yml@v1
+    uses: henderson-tech/devulinka-buildkit/.github/workflows/build-image.yml@v1
     with:
       runs-on: '["self-hosted","${NAME}-ci"]'
       image: ghcr.io/$(echo "$SLUG" | tr '[:upper:]' '[:lower:]')
