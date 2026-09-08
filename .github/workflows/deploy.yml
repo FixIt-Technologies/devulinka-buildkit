@@ -11,7 +11,7 @@ name: deploy (buildkit v2)
 # Consuming (FixIt deploy-dev example):
 #
 #   deploy:
-#     uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/deploy.yml@v2
+#     uses: henderson-tech/devulinka-buildkit/.github/workflows/deploy.yml@v2
 #     secrets: inherit          # prepare renders env payloads from these
 #     with:
 #       runs-on: '["self-hosted","fixit-bastion"]'
@@ -97,7 +97,7 @@ jobs:
       - name: Check out buildkit
         uses: actions/checkout@v5
         with:
-          repository: FixIt-Technologies/devulinka-buildkit
+          repository: henderson-tech/devulinka-buildkit
           ref: ${{ github.job_workflow_sha }}
           path: .buildkit-v2
 

@@ -29,7 +29,7 @@ Build + push an image (queued on the host slots):
 ```yaml
 jobs:
   build:
-    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/build-image.yml@v1
+    uses: henderson-tech/devulinka-buildkit/.github/workflows/build-image.yml@v1
     with:
       runs-on: '["self-hosted","deployik-ci"]'   # your repo's Devulinka runner labels
       image: ghcr.io/lefteq/lovinka-deployik
@@ -43,7 +43,7 @@ Bun test lane:
 ```yaml
 jobs:
   web-test:
-    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/test-bun.yml@v1
+    uses: henderson-tech/devulinka-buildkit/.github/workflows/test-bun.yml@v1
     with:
       runs-on: '["self-hosted","deployik-ci"]'
       working-directory: web
@@ -59,7 +59,7 @@ build slot (use `build-lock-acquire`/`-release` with `class: small` when the
 check spans multiple steps):
 
 ```yaml
-- uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock@v1
+- uses: henderson-tech/devulinka-buildkit/actions/build-lock@v1
   with:
     class: small
     run: |
@@ -72,19 +72,19 @@ browser run) so concurrent E2E across repos can't stack up on the host.
 Acquire/release because the phase spans multiple steps:
 
 ```yaml
-- uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock-acquire@v1
+- uses: henderson-tech/devulinka-buildkit/actions/build-lock-acquire@v1
   with:
     class: e2e
 # ... compose up, run tests ...
-- uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock-release@v1
+- uses: henderson-tech/devulinka-buildkit/actions/build-lock-release@v1
   if: always()
 ```
 
 À-la-carte composite actions (for workflows that need custom build steps):
 
 ```yaml
-- uses: FixIt-Technologies/devulinka-buildkit/actions/attach-builder@v1
-- uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock@v1
+- uses: henderson-tech/devulinka-buildkit/actions/attach-builder@v1
+- uses: henderson-tech/devulinka-buildkit/actions/build-lock@v1
   with:
     priority: 'false'
     run: docker buildx build --builder devulinka-buildkit ...
@@ -154,7 +154,7 @@ server's forced-command dispatcher. Targets are logical names (`fixit-prod`,
 ```yaml
 jobs:
   deploy:
-    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/deploy.yml@v2
+    uses: henderson-tech/devulinka-buildkit/.github/workflows/deploy.yml@v2
     secrets: inherit
     with:
       runs-on: '["self-hosted","fixit-bastion"]'
