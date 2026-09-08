@@ -25,7 +25,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/build-image.yml@v1
+    uses: henderson-tech/devulinka-buildkit/.github/workflows/build-image.yml@v1
     with:
       runs-on: '["self-hosted","deployik-ci"]'   # your repo's runner labels
       image: ghcr.io/<owner>/<name>              # no tag; defaults to latest + short SHA
@@ -48,7 +48,7 @@ does not grant the calling repo's token write access.
 ```yaml
 jobs:
   test:
-    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/test-bun.yml@v1
+    uses: henderson-tech/devulinka-buildkit/.github/workflows/test-bun.yml@v1
     with:
       runs-on: '["self-hosted","deployik-ci"]'
       working-directory: web
@@ -69,7 +69,7 @@ the expensive part yourself if it deserves one.
 **Take a slot around your own steps.** Single command:
 
 ```yaml
-- uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock@v1
+- uses: henderson-tech/devulinka-buildkit/actions/build-lock@v1
   with:
     class: small
     run: |
@@ -80,11 +80,11 @@ the expensive part yourself if it deserves one.
 Multi-step phase (compose stack + browser E2E), acquire/release:
 
 ```yaml
-- uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock-acquire@v1
+- uses: henderson-tech/devulinka-buildkit/actions/build-lock-acquire@v1
   with:
     class: e2e
 # ... compose up, run the suite ...
-- uses: FixIt-Technologies/devulinka-buildkit/actions/build-lock-release@v1
+- uses: henderson-tech/devulinka-buildkit/actions/build-lock-release@v1
   if: always()
 ```
 
@@ -151,7 +151,7 @@ server's forced-command dispatcher. Targets are logical names (`fixit-prod`,
 ```yaml
 jobs:
   deploy:
-    uses: FixIt-Technologies/devulinka-buildkit/.github/workflows/deploy.yml@v2
+    uses: henderson-tech/devulinka-buildkit/.github/workflows/deploy.yml@v2
     secrets: inherit
     with:
       runs-on: '["self-hosted","fixit-bastion"]'
