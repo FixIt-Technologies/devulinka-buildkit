@@ -117,6 +117,27 @@ ln -s /etc/hosts "$tmp/link"
 bash "$deployctl" fixit-dev env-put "@$tmp/link" >/dev/null 2>&1; rc=$?
 check "symlink payload rejected" 2 "$rc"
 
+tok_sha=$(printf '%s' 'ghs_secret' | shasum -a 256 2>/dev/null | cut -d' ' -f1 || printf '%s' 'ghs_secret' | sha256sum | cut -d' ' -f1)
+out=$(GHCR_TOKEN=ghs_secret GITHUB_ACTOR=octocat bash "$deployctl" fixit-dev registry-login 2>&1); rc=$?
+extra=0; [[ $out == *"registry-login?arg=octocat&arg=10&arg=${tok_sha}"* && $out == *"sha=${tok_sha} bytes=10"* ]] && extra=1
+check "registry-login: token from GHCR_TOKEN, actor from GITHUB_ACTOR" 0 "$rc" "$extra"
+out=$(GHCR_TOKEN=ghs_secret GITHUB_ACTOR=octocat bash "$deployctl" fixit-dev registry-login someone 2>&1); rc=$?
+extra=0; [[ $out == *"registry-login?arg=someone&arg=10&arg="* ]] && extra=1
+check "registry-login: explicit actor wins over GITHUB_ACTOR" 0 "$rc" "$extra"
+env -u GHCR_TOKEN -u GITHUB_TOKEN bash "$deployctl" fixit-dev registry-login octocat >/dev/null 2>&1; rc=$?
+check "registry-login without a token or @file rejected" 2 "$rc"
+out=$(GHCR_TOKEN=ghs_secret GITHUB_ACTOR=octocat bash "$deployctl" fixit-dev pull 101 2>&1); rc=$?
+extra=0; [[ $out == *"registry-login?arg=octocat&arg=10&arg=${tok_sha}"* && $out == *"pull?arg=101"* ]] && extra=1
+check "pull logs in first when GHCR_TOKEN is set" 0 "$rc" "$extra"
+out=$(GHCR_TOKEN=ghs_secret GITHUB_ACTOR=octocat bash "$deployctl" fixit-dev deploy v1.2.3 2>&1); rc=$?
+extra=0; [[ $out == *"registry-login?arg=octocat"* && $out == *"deploy?arg=v1.2.3"* ]] && extra=1
+check "deploy logs in first when GHCR_TOKEN is set" 0 "$rc" "$extra"
+out=$(env -u GHCR_TOKEN -u GITHUB_TOKEN bash "$deployctl" fixit-dev pull 101 2>&1); rc=$?
+extra=0; [[ $out != *"registry-login"* && $out == *"pull?arg=101"* ]] && extra=1
+check "pull without GHCR_TOKEN sends no login" 0 "$rc" "$extra"
+GHCR_TOKEN=ghs_secret GITHUB_ACTOR=octocat bash "$deployctl" fixit-dev pull '@a' '@b' >/dev/null 2>&1; rc=$?
+check "auto-login never runs for an explicit payload verb" 2 "$rc"
+
 if (( fails > 0 )); then
   echo "$fails test(s) FAILED"
   exit 1
