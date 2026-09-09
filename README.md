@@ -175,6 +175,13 @@ Never blindly retry an unknown-state step — inspect the target first
 authenticated with a per-request nonce, so dispatcher output cannot forge a
 verdict. Tests: `scripts/test-deployctl.sh`.
 
+Registry credentials never touch a workflow: put this run's job token in
+`GHCR_TOKEN` (`${{ secrets.GITHUB_TOKEN }}`, `packages: read`) and any verb
+that makes the host pull (`pull`, `deploy`) authenticates first by itself —
+`deployctl <target> registry-login [actor]` is the explicit form (actor
+defaults to `GITHUB_ACTOR`; an `@token-file` is still accepted). The token
+passes through a 0600 temp file deployctl owns and removes.
+
 À la carte: `actions/deploy-step@v2` (single verb) or
 `scripts/deployctl.sh` directly. Every non-loopback request uses TLS with the
 gateway's public-key hash pinned in `scripts/deploy-gateway-curl.sh`; cleartext

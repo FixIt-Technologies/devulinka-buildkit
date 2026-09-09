@@ -10,6 +10,17 @@
 # sha256 are appended as the final two protocol args (the lovinka-ssh
 # dispatcher framing) and the bytes ride the request body.
 #
+# Registry credentials (GHCR_TOKEN in the environment = this run's
+# GITHUB_TOKEN with packages: read):
+#   deployctl <target> registry-login [actor]   token from $GHCR_TOKEN
+#                                               (fallback $GITHUB_TOKEN),
+#                                               actor defaults to $GITHUB_ACTOR
+#   deployctl <target> pull|deploy ...          logs in first, by itself,
+#                                               whenever $GHCR_TOKEN is set
+# The token passes through a 0600 temp file this script owns and removes;
+# a workflow never stages it. Forgetting the auth step is thereby impossible:
+# any verb that makes the host pull authenticates on its own.
+#
 # Output: the dispatcher's combined output, live. Exit code: the remote
 # verb's exit code. The status line is authenticated with a per-request
 # nonce (X-Exit-Nonce), so dispatcher output cannot forge it.
@@ -48,6 +59,29 @@ done
 
 [[ $target =~ ^[a-z][a-z0-9-]+$ ]] || { echo "deployctl: invalid target '$target'" >&2; exit 2; }
 [[ $verb =~ ^[a-z][a-z0-9-]{0,31}$ ]] || { echo "deployctl: invalid verb '$verb'" >&2; exit 2; }
+
+token_file=''
+cleanup_token() { [[ -z $token_file ]] || rm -f "$token_file"; }
+if [[ $verb == registry-login && -z $payload ]]; then
+  registry_token=${GHCR_TOKEN:-${GITHUB_TOKEN:-}}
+  [[ -n $registry_token ]] || {
+    echo "deployctl: registry-login needs GHCR_TOKEN (or GITHUB_TOKEN) in the environment, or an @token-file" >&2
+    exit 2
+  }
+  if (( ${#args[@]} == 0 )); then
+    [[ -n ${GITHUB_ACTOR:-} ]] || { echo "deployctl: registry-login needs an actor argument or GITHUB_ACTOR" >&2; exit 2; }
+    args=("$GITHUB_ACTOR")
+  fi
+  umask 077
+  token_file=$(mktemp)
+  trap cleanup_token EXIT
+  printf '%s' "$registry_token" > "$token_file"
+  unset registry_token
+  payload=$token_file
+elif [[ ($verb == pull || $verb == deploy) && -z $payload && -n ${GHCR_TOKEN:-} ]]; then
+  # The host is about to pull: authenticate it first with this run's token.
+  bash "$0" "$target" registry-login
+fi
 
 curl_args=(-sS -N -X POST)
 if [[ -n $payload ]]; then
@@ -95,7 +129,7 @@ curl_args+=(-H "X-Exit-Nonce: $nonce")
 url="${gateway}/v1/deploy/${target}/${verb}${query:+?${query}}"
 response_file=$(mktemp)
 trailer_file=$(mktemp)
-trap 'rm -f "$response_file" "$trailer_file"' EXIT
+trap 'rm -f "$response_file" "$trailer_file"; cleanup_token' EXIT
 
 set +e
 deploy_gateway_curl "${curl_args[@]}" "$url" > "$response_file"
