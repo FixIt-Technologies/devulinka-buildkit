@@ -19,6 +19,13 @@ inputs:
     description: File streamed as the verb's payload (framed bytes+sha256)
     required: false
     default: ''
+  payload-env:
+    description: >-
+      Name of an environment variable whose VALUE is streamed as the payload
+      (for secret payloads such as a registry token — deployctl stages it in
+      a 0600 temp file it owns and removes; the workflow never writes it).
+    required: false
+    default: ''
   gateway-url:
     description: Override the gateway endpoint (tests only)
     required: false
@@ -37,12 +44,19 @@ runs:
         STEP_VERB: ${{ inputs.verb }}
         STEP_ARGS: ${{ inputs.args }}
         STEP_PAYLOAD_FILE: ${{ inputs.payload-file }}
+        STEP_PAYLOAD_ENV: ${{ inputs.payload-env }}
       run: |
         set -euo pipefail
         [[ -n "${DEPLOY_GATEWAY_URL:-}" ]] || unset DEPLOY_GATEWAY_URL
         extra=()
+        if [[ -n "$STEP_PAYLOAD_FILE" && -n "$STEP_PAYLOAD_ENV" ]]; then
+          echo "deploy-step: payload-file and payload-env are mutually exclusive" >&2
+          exit 2
+        fi
         if [[ -n "$STEP_PAYLOAD_FILE" ]]; then
           extra+=("@$STEP_PAYLOAD_FILE")
+        elif [[ -n "$STEP_PAYLOAD_ENV" ]]; then
+          extra+=("@env:$STEP_PAYLOAD_ENV")
         fi
         read -r -a verb_args <<< "$STEP_ARGS"
         bash "${GITHUB_ACTION_PATH}/../../scripts/deployctl.sh" \

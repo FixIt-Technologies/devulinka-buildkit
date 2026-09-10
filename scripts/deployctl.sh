@@ -8,7 +8,10 @@
 #
 # A trailing @file streams that file as the payload: its byte count and
 # sha256 are appended as the final two protocol args (the lovinka-ssh
-# dispatcher framing) and the bytes ride the request body.
+# dispatcher framing) and the bytes ride the request body. @env:NAME streams
+# the value of environment variable NAME instead — for secret payloads (a
+# dispatcher whose `deploy` verb takes the registry token as its payload),
+# so a workflow never stages a secret in a file itself.
 #
 # Registry credentials (GHCR_TOKEN in the environment = this run's
 # GITHUB_TOKEN with packages: read):
@@ -47,10 +50,15 @@ verb=$2
 shift 2
 
 payload=''
+payload_env=''
 args=()
 for token in "$@"; do
-  if [[ $token == @* ]]; then
-    [[ -z $payload ]] || { echo "deployctl: only one @payload-file allowed" >&2; exit 2; }
+  if [[ $token == @env:* ]]; then
+    [[ -z $payload && -z $payload_env ]] || { echo "deployctl: only one @payload allowed" >&2; exit 2; }
+    payload_env=${token#@env:}
+    [[ $payload_env =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || { echo "deployctl: invalid @env: name '$payload_env'" >&2; exit 2; }
+  elif [[ $token == @* ]]; then
+    [[ -z $payload && -z $payload_env ]] || { echo "deployctl: only one @payload allowed" >&2; exit 2; }
     payload=${token#@}
   else
     args+=("$token")
@@ -62,7 +70,19 @@ done
 
 token_file=''
 cleanup_token() { [[ -z $token_file ]] || rm -f "$token_file"; }
-if [[ $verb == registry-login && -z $payload ]]; then
+# Stage a secret value as the payload: 0600 temp file this script owns and
+# removes on exit. The value never appears in argv or in a workflow-managed file.
+stage_secret_payload() {
+  umask 077
+  token_file=$(mktemp)
+  trap cleanup_token EXIT
+  printf '%s' "$1" > "$token_file"
+  payload=$token_file
+}
+if [[ -n $payload_env ]]; then
+  [[ -n ${!payload_env:-} ]] || { echo "deployctl: @env:$payload_env is unset or empty" >&2; exit 2; }
+  stage_secret_payload "${!payload_env}"
+elif [[ $verb == registry-login && -z $payload ]]; then
   registry_token=${GHCR_TOKEN:-${GITHUB_TOKEN:-}}
   [[ -n $registry_token ]] || {
     echo "deployctl: registry-login needs GHCR_TOKEN (or GITHUB_TOKEN) in the environment, or an @token-file" >&2
@@ -72,12 +92,8 @@ if [[ $verb == registry-login && -z $payload ]]; then
     [[ -n ${GITHUB_ACTOR:-} ]] || { echo "deployctl: registry-login needs an actor argument or GITHUB_ACTOR" >&2; exit 2; }
     args=("$GITHUB_ACTOR")
   fi
-  umask 077
-  token_file=$(mktemp)
-  trap cleanup_token EXIT
-  printf '%s' "$registry_token" > "$token_file"
+  stage_secret_payload "$registry_token"
   unset registry_token
-  payload=$token_file
 elif [[ ($verb == pull || $verb == deploy) && -z $payload && -n ${GHCR_TOKEN:-} ]]; then
   # The host is about to pull: authenticate it first with this run's token.
   bash "$0" "$target" registry-login

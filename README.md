@@ -180,7 +180,9 @@ Registry credentials never touch a workflow: put this run's job token in
 that makes the host pull (`pull`, `deploy`) authenticates first by itself —
 `deployctl <target> registry-login [actor]` is the explicit form (actor
 defaults to `GITHUB_ACTOR`; an `@token-file` is still accepted). The token
-passes through a 0600 temp file deployctl owns and removes.
+passes through a 0600 temp file deployctl owns and removes. Dispatchers whose
+`deploy` verb takes the token as its payload (Voke, Deployik) get the same
+hygiene from `@env:GHCR_TOKEN` — `deploy-step`'s `payload-env` input.
 
 À la carte: `actions/deploy-step@v2` (single verb) or
 `scripts/deployctl.sh` directly. Every non-loopback request uses TLS with the

@@ -138,6 +138,16 @@ check "pull without GHCR_TOKEN sends no login" 0 "$rc" "$extra"
 GHCR_TOKEN=ghs_secret GITHUB_ACTOR=octocat bash "$deployctl" fixit-dev pull '@a' '@b' >/dev/null 2>&1; rc=$?
 check "auto-login never runs for an explicit payload verb" 2 "$rc"
 
+out=$(GHCR_TOKEN=ghs_secret bash "$deployctl" fixit-dev deploy v1 octocat @env:GHCR_TOKEN 2>&1); rc=$?
+extra=0; [[ $out == *"deploy?arg=v1&arg=octocat&arg=10&arg=${tok_sha}"* && $out == *"sha=${tok_sha} bytes=10"* && $out != *"registry-login"* ]] && extra=1
+check "@env:NAME stages the variable as the framed payload (no auto-login)" 0 "$rc" "$extra"
+env -u GHCR_TOKEN bash "$deployctl" fixit-dev deploy v1 octocat @env:GHCR_TOKEN >/dev/null 2>&1; rc=$?
+check "@env:NAME unset rejected" 2 "$rc"
+bash "$deployctl" fixit-dev deploy v1 '@env:bad-name' >/dev/null 2>&1; rc=$?
+check "@env:NAME with an invalid name rejected" 2 "$rc"
+GHCR_TOKEN=x bash "$deployctl" fixit-dev deploy v1 @env:GHCR_TOKEN "@$tmp/payload.env" >/dev/null 2>&1; rc=$?
+check "@env: plus @file rejected" 2 "$rc"
+
 if (( fails > 0 )); then
   echo "$fails test(s) FAILED"
   exit 1
